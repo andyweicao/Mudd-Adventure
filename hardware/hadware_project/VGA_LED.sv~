@@ -1,0 +1,191 @@
+/*
+ * Avalon memory-mapped peripheral for the VGA LED Emulator
+ *
+ * Stephen A. Edwards
+ * Columbia University
+
+ * Wei Cao(wc2467), Mingrui Xu(mx2151)
+ */
+
+module VGA_LED(input logic        clk,
+	       input logic 	  reset,
+	       input logic [31:0]  writedata,
+	       input logic 	  write,
+	       input 		  chipselect,
+	       input logic [8:0]  address,
+
+	       output logic [7:0] VGA_R, VGA_G, VGA_B,
+	       output logic 	  VGA_CLK, VGA_HS, VGA_VS, VGA_BLANK_n,
+	       output logic 	  VGA_SYNC_n);
+
+	 
+   logic [21:0]                    screen[0:479] ;
+  
+
+   VGA_LED_Emulator led_emulator(.clk50(clk), .*);
+
+   always_ff @(posedge clk)
+     if (reset) begin
+	screen[0] <= 22'd1592429;
+	screen[1] <= 22'd1591406;
+	screen[2] <= 22'd1590383;
+	screen[3] <= 22'd1589360;
+	screen[4] <= 22'd1588337;
+	screen[5] <= 22'd1587314;
+	screen[6] <= 22'd1586291;
+	screen[7] <= 22'd1586291;
+	screen[8] <= 22'd1585268;
+	screen[9] <= 22'd1584245;
+	screen[10] <= 22'd1583222;
+	screen[11] <= 22'd1582199;
+	screen[12] <= 22'd1581176;
+	screen[13] <= 22'd1580153;
+	screen[14] <= 22'd1579130;
+	screen[15] <= 22'd1579130;
+	screen[16] <= 22'd1578107;
+	screen[17] <= 22'd1577084;
+   screen[18] <= 22'd1576061;
+   screen[19] <= 22'd1575038;
+   screen[20] <= 22'd1574015;
+   screen[21] <= 22'd1572992;
+   screen[22] <= 22'd1571969;
+   screen[23] <= 22'd1570946;
+   screen[24] <= 22'd1570946;
+   screen[25] <= 22'd1569923;
+   screen[26] <= 22'd1568900;
+   screen[27] <= 22'd1567877;
+   screen[28] <= 22'd1566854;
+   screen[29] <= 22'd1565831;
+   screen[30] <= 22'd1564808;
+   screen[31] <= 22'd1563785;
+	screen[32] <= 22'd1563785;
+	screen[33] <= 22'd1562762;
+	screen[34] <= 22'd1561739;
+	screen[35] <= 22'd1560716;
+	screen[36] <= 22'd1559693;
+	screen[37] <= 22'd1558670;
+   screen[38] <= 22'd1557647;
+   screen[39] <= 22'd1556624;
+   screen[40] <= 22'd1556624;
+   screen[41] <= 22'd1555601;
+   screen[42] <= 22'd1554578;
+   screen[43] <= 22'd1553555;
+   screen[44] <= 22'd1552532;
+   screen[45] <= 22'd1551509;
+   screen[46] <= 22'd1550486;
+   screen[47] <= 22'd1549463;
+   screen[48] <= 22'd1548440;
+   screen[49] <= 22'd1548440;
+   screen[50] <= 22'd1547417;
+	screen[51] <= 22'd1546394;
+	screen[52] <= 22'd1545371;
+	screen[53] <= 22'd1544348;
+	screen[54] <= 22'd1543325;
+	screen[55] <= 22'd1542302;
+	screen[56] <= 22'd1541279;
+	screen[57] <= 22'd1541279;
+   screen[58] <= 22'd1540256;
+   screen[59] <= 22'd1539233;
+   screen[60] <= 22'd1538210;
+   screen[61] <= 22'd1537187;
+   screen[62] <= 22'd1536164;
+   screen[63] <= 22'd1535141;
+   screen[64] <= 22'd1534118;
+   screen[65] <= 22'd1534118;
+   screen[66] <= 22'd1533095;
+   screen[67] <= 22'd1532072;
+   screen[68] <= 22'd1531049;
+   screen[69] <= 22'd1530026;
+   screen[70] <= 22'd1529003;
+   screen[71] <= 22'd1527980;
+	screen[72] <= 22'd1526957;
+	screen[73] <= 22'd1525934;
+	screen[74] <= 22'd1525934;
+	screen[75] <= 22'd1524911;
+	screen[76] <= 22'd1523888;
+	screen[77] <= 22'd1522865;
+   screen[78] <= 22'd1521842;
+   screen[79] <= 22'd1520819;
+   screen[80] <= 22'd1519796;
+   screen[81] <= 22'd1518773;
+   screen[82] <= 22'd1518773;
+   screen[83] <= 22'd1517750;
+   screen[84] <= 22'd1516727;
+   screen[85] <= 22'd1515704;
+   screen[86] <= 22'd1514681;
+   screen[87] <= 22'd1513658;
+   screen[88] <= 22'd1512635;
+   screen[89] <= 22'd1511612;
+   screen[90] <= 22'd1511612;
+	screen[91] <= 22'd1510589;
+   screen[92] <= 22'd1509566;
+   screen[93] <= 22'd1508543;
+   screen[94] <= 22'd1507520;
+   screen[95] <= 22'd1506497;
+   screen[96] <= 22'd1505474;
+   screen[97] <= 22'd1504451;
+   screen[98] <= 22'd1503428;
+   screen[99] <= 22'd1503428;
+   screen[100] <= 22'd1502405;
+   end else if (chipselect && write)
+	  //begin
+    // screen[address]<= writedata[21:0];
+	  //end	
+		case (address)
+		9'd300 : screen[300] <= writedata[21:0];
+		9'd301 : screen[301] <= writedata[21:0];
+		9'd302 : screen[302] <= writedata[21:0];
+		9'd304 : screen[303] <= writedata[21:0];
+		9'd304 : screen[304] <= writedata[21:0];
+		9'd305 : screen[305] <= writedata[21:0];
+		9'd306 : screen[306] <= writedata[21:0];
+		9'd307 : screen[307] <= writedata[21:0];
+		9'd308 : screen[308] <= writedata[21:0];
+		9'd309 : screen[309] <= writedata[21:0];
+		9'd310 : screen[310] <= writedata[21:0];
+		9'd311 : screen[311] <= writedata[21:0];
+		9'd312 : screen[312] <= writedata[21:0];
+		9'd313 : screen[313] <= writedata[21:0];
+		9'd314 : screen[314] <= writedata[21:0];
+		9'd315 : screen[315] <= writedata[21:0];
+		9'd316 : screen[316] <= writedata[21:0];
+		9'd317 : screen[317] <= writedata[21:0];
+		9'd318 : screen[318] <= writedata[21:0];
+		9'd319 : screen[319] <= writedata[21:0];
+		9'd320 : screen[320] <= writedata[21:0];
+		9'd321 : screen[321] <= writedata[21:0];
+		9'd322 : screen[322] <= writedata[21:0];
+		9'd323 : screen[323] <= writedata[21:0];
+		9'd324 : screen[324] <= writedata[21:0];
+		9'd325 : screen[325] <= writedata[21:0];
+		9'd326 : screen[326] <= writedata[21:0];
+		9'd327 : screen[327] <= writedata[21:0];
+		9'd328 : screen[328] <= writedata[21:0];
+		9'd329 : screen[329] <= writedata[21:0];
+		9'd330 : screen[330] <= writedata[21:0];
+		9'd331 : screen[331] <= writedata[21:0];
+		9'd332 : screen[332] <= writedata[21:0];
+		9'd333 : screen[333] <= writedata[21:0];
+		9'd334 : screen[334] <= writedata[21:0];
+		9'd335 : screen[335] <= writedata[21:0];
+		9'd336 : screen[336] <= writedata[21:0];
+		9'd337 : screen[337] <= writedata[21:0];
+		9'd338 : screen[338] <= writedata[21:0];
+		9'd339 : screen[339] <= writedata[21:0];
+		9'd340 : screen[340] <= writedata[21:0];
+		9'd341 : screen[341] <= writedata[21:0];
+		9'd342 : screen[342] <= writedata[21:0];
+		9'd343 : screen[343] <= writedata[21:0];
+		9'd344 : screen[344] <= writedata[21:0];
+		9'd345 : screen[345] <= writedata[21:0];
+		9'd346 : screen[346] <= writedata[21:0];
+		9'd347 : screen[347] <= writedata[21:0];
+		9'd348 : screen[348] <= writedata[21:0];
+		9'd349 : screen[349] <= writedata[21:0];
+		9'd350 : screen[350] <= writedata[21:0];
+		
+      endcase
+       
+	 
+	       
+endmodule

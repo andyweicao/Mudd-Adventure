@@ -1,0 +1,308 @@
+module fight( 
+	input logic clk,reset,count,
+  	input logic [9:0]  vcount,
+	input logic [10:0] hcount,
+	input logic [63:0]  indata1,
+	output logic [7:0] boss_hp,
+	output logic [6:0] hp,
+	output logic [5:0] am,
+	output logic [1:0] hurt, clip, bag, boss_sec,
+	output logic empty, game_win, game_lose, treasure_clip, treasure_heal
+);
+
+       
+parameter SIZE =  4;
+parameter IDLE = 4'b0000, 
+			 MAKETHROUGH = 4'b0001,
+			 FIGHT = 4'b0010,
+			 TREASURE1 = 4'b0011, 
+			 TREASURE2 = 4'b0100,
+			 START = 4'b0101, 
+			 WIN = 4'b0110, 
+			 BOSS_ROUND = 4'b0111, 
+			 LOAD = 4'b1000, 
+			 HEAL = 4'b1001, 
+			 LOSE = 4'b1010, 
+			 CURSTAT = 4'b1011,
+			 BOSS_INI = 4'b1100,
+			 MODE_SELECT = 4'b1101,
+			 TREASURE1_GET = 4'b1110,
+			 TREASURE2_GET = 4'b1111;
+			 
+reg [SIZE-1:0] state;
+reg [8:0] boss_hp_cur;
+reg [5:0] am_cur;
+reg [6:0] hp_cur;
+reg [1:0] clip_cur;
+reg [1:0] bag_cur;
+
+logic [1:0] boss_select;
+logic [4:0] boss_attack;
+logic [2:0] pickup;
+logic [2:0] control;
+
+assign pickup = indata [24:22];
+assign control = indata [28:26];
+
+
+always_ff @(posedge count && (vcount == 0) && (hcount == 0)) begin
+	if (indata1[29]) begin
+		hp = 7'd90;
+		am = 6'd60; 
+		hp_cur = 7'd90;
+		am_cur = 6'd60; 
+		hurt = 2'b00;
+		empty = 1'b0;
+		clip_cur = 2'b10;
+		clip = 2'b10;
+		bag_cur = 2'b10;
+		bag = 2'b10;
+		game_win = 1'b0;
+		game_lose = 1'b0;
+		treasure_clip = 1'b0;
+		treasure_heal = 1'b0;
+		boss_sec = 2'b00;
+		boss_select = 2'b00;
+		state <= IDLE;
+	end else
+	 case (state)
+		IDLE: begin
+			game_win = 1'b0;
+			game_lose = 1'b0;
+			treasure_clip = 1'b0;
+			treasure_heal = 1'b0;
+			boss_sec = 2'b00;
+			boss_select = 2'b00;
+			hp = 7'd90;
+			am = 6'd60; 
+			hp_cur = 7'd90;
+			am_cur = 6'd60; 
+			clip_cur = 2'b10;
+			clip = 2'b10;
+			bag_cur = 2'b10;
+			bag = 2'b10;
+			state <= MAKETHROUGH;
+		end
+		
+		MAKETHROUGH: begin
+						
+			/*if (pickup == 3'b000) begin		           // nothing happened, what if there is control signal
+				if (control == 3'b001) begin
+					state <= MAKETHROUGH;
+				end else if ( control == 3'b010) begin          // Loading the clip
+					if (clip_cur > 0) begin
+						state <= LOAD;
+				end else begin 
+					state <= MAKETHROUGH;
+				end
+				end else if ( control == 3'b011) begin          // Healing yourself
+					if (bag_cur > 0) begin
+						state <= HEAL;
+					end else begin
+						state <= MAKETHROUGH;
+					end
+				end else 
+			end else */if (pickup == 3'b001) begin                // boss1 comes!
+				boss_select = 2'b01;
+				boss_sec = 2'b01;
+				state <= BOSS_INI;
+			end else if (pickup == 3'b010) begin                // boss2 comes!
+				boss_select = 2'b10;
+				boss_sec = 2'b10;
+				state <= BOSS_INI;
+			end else if (pickup == 3'b011) begin                // get a AmBox
+				state <= TREASURE1;				
+			end else if (pickup == 3'b100) begin                // get a FirstAidBag
+				state <= TREASURE2;
+			end else begin 
+				if ( control == 3'b100) begin          // Wasting your AM
+					if ( am_cur > 0 ) begin
+						am = am_cur - 1;
+						am_cur <= am_cur - 1;
+						state <= MAKETHROUGH;
+					end else begin
+						empty = 1'b1;
+						state <= MAKETHROUGH;
+					end	
+				end else begin
+					state <= MAKETHROUGH;			
+				end		
+			end
+		end
+		
+		TREASURE1: begin
+			treasure_clip = 1'b1;
+			if ( control == 3'b001 ) begin 
+				state <= TREASURE1_GET;
+			end else begin
+				state <= TREASURE1;
+			end
+		end
+		
+		TREASURE1_GET: begin
+			if (clip_cur < 2'b11) begin
+				clip = clip_cur + 1;
+				clip_cur <= clip_cur + 1;
+			end else begin
+				clip = clip_cur;
+			end
+			treasure_clip = 1'b0;
+			state <= MAKETHROUGH;
+		end
+		
+		TREASURE2: begin
+			treasure_heal = 1'b1;
+			if ( control == 3'b001 ) begin 
+				state <= TREASURE2_GET;
+			end else begin
+				state <= TREASURE2;
+			end
+		end
+
+		TREASURE2_GET: begin
+			if (bag_cur < 2'b11) begin
+				bag = bag_cur + 1;
+				bag_cur <= bag_cur + 1;
+			end else begin
+				bag = bag_cur;
+			end
+			treasure_heal = 1'b0;
+			state <= MAKETHROUGH;
+		end
+	
+		MODE_SELECT: begin
+			state <= START;
+		end
+		
+		BOSS_INI: begin
+			boss_hp = (boss_select == 2'b10)*50 + (boss_select == 2'b01)*100;
+			boss_hp_cur = (boss_select == 2'b10)*50 + (boss_select == 2'b01)*100;
+			boss_attack = (boss_select == 2'b10)*7 + (boss_select == 2'b01)*3;
+			state <= START;
+		end
+		
+		START: begin
+			if (control == 3'b001) begin                   // mode change
+				state <= MODE_SELECT;
+			end else if ( control == 3'b010) begin         // loading your clip
+				if (clip_cur > 0) begin
+					state <= LOAD;
+				end else begin                              // you have no more AMs
+					state <= BOSS_ROUND;
+				end
+			end else if ( control == 3'b011) begin          // Emergency Heal
+				if (bag_cur > 0) begin
+					state <= HEAL;
+				end else begin
+					state <= BOSS_ROUND;
+				end
+			end else if ( control == 3'b100) begin
+				state <= FIGHT; 
+			end else begin
+				state <= START;			
+			end
+		end
+		
+		FIGHT: begin
+			if (boss_hp_cur < 10) begin
+						boss_hp_cur = 0;
+						boss_hp = 0;	
+						state <= WIN;			
+			end else begin
+				if (am_cur > 3) begin
+					am = am_cur -2;
+					am_cur <= am_cur - 2; 
+					boss_hp_cur <= boss_hp_cur - 3;	
+					boss_hp = boss_hp_cur - 3;
+					state <= BOSS_ROUND;
+				end else begin
+					am_cur = 0;
+					am = 0;
+					empty = 1;	
+					state <= LOAD;
+				end	
+			end
+				
+		end
+		
+		BOSS_ROUND: begin
+			if (hp_cur < boss_attack) begin
+				hp_cur = 0;
+				hp = 0;
+				state <= LOSE;
+			end else begin
+				hp = hp_cur - boss_attack;
+				hp_cur <= hp_cur - boss_attack;
+				state <= CURSTAT;
+			end
+		end
+		
+		CURSTAT: begin
+			//hurt = (hp_cur < 20)*2'b10 + (20 <= hp_cur < 50)*2'b01 + (50<= hp_cur)*2'b00;
+			if ( am_cur == 0 && clip_cur != 0) begin
+					state <= LOAD;
+			end else begin
+					state <= START;
+			end
+		end
+		
+		LOAD: begin
+				if ( clip_cur > 0 ) begin
+					clip = clip_cur - 1;
+					clip_cur <= clip_cur -1;
+					if (am_cur < 30) begin
+						am = am_cur + 30;
+						am_cur <= am_cur + 30;
+					end else begin
+						am = 60;
+						am_cur <= 60;
+					end
+					empty = 1'b0;
+				end 			
+				if (boss_select == 2'b00) begin
+					state <= MAKETHROUGH;	
+				end else begin
+					state <= BOSS_ROUND;
+				end
+		end
+		
+		HEAL: begin
+				if ( bag_cur > 0 ) begin
+					bag = bag_cur -1;
+					bag_cur <= bag_cur -1;				
+					if (hp_cur < 40) begin
+						hp = hp_cur + 50;
+						hp_cur <= hp_cur + 50;
+					end else begin
+						hp = 90;
+						hp_cur = 90;
+					end
+				end 
+				if (boss_select == 2'b00) begin
+					state <= MAKETHROUGH;	
+				end else begin
+					state <= BOSS_ROUND;
+				end
+		end
+		
+		WIN: begin
+				game_win = 1'b1;
+				boss_sec = 2'b00;
+				boss_select = 2'b00;
+				hp_cur = 7'd90;
+				hp = 7'd90;
+				am_cur = 6'd60;
+				am = 6'd60;
+				state <= MAKETHROUGH;
+			end
+		
+		LOSE: begin
+			game_lose = 1'b1;
+			state <= LOSE;
+		end
+		endcase
+end
+
+
+
+endmodule 

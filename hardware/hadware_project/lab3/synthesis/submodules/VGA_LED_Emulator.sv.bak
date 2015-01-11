@@ -1,0 +1,1147 @@
+/*
+ * Seven-segment LED emulator
+ *
+ * Stephen A. Edwards, Columbia University
+
+ * Wei Cao(wc2467), Mingrui Xu(mx2151)
+ */
+
+module VGA_LED_Emulator(
+ input logic 	    clk50, reset,
+ input logic [21:0]  screen[0:479],
+ output logic [7:0] VGA_R, VGA_G, VGA_B,
+ output logic 	    VGA_CLK, VGA_HS, VGA_VS, VGA_BLANK_n, VGA_SYNC_n);
+
+/*
+ * 640 X 480 VGA timing for a 50 MHz clock: one pixel every other cycle
+ * 
+ * HCOUNT 1599 0             1279       1599 0
+ *             _______________              ________
+ * ___________|    Video      |____________|  Video
+ * 
+ * 
+ * |SYNC| BP |<-- HACTIVE -->|FP|SYNC| BP |<-- HACTIVE
+ *       _______________________      _____________
+ * |____|       VGA_HS          |____|
+ */
+   // Parameters for hcount
+   parameter HACTIVE      = 11'd 1280,
+             HFRONT_PORCH = 11'd 32,
+             HSYNC        = 11'd 192,
+             HBACK_PORCH  = 11'd 96,   
+             HTOTAL       = HACTIVE + HFRONT_PORCH + HSYNC + HBACK_PORCH; // 1600
+   
+   // Parameters for vcount
+   parameter VACTIVE      = 10'd 480,
+             VFRONT_PORCH = 10'd 10,
+             VSYNC        = 10'd 2,
+             VBACK_PORCH  = 10'd 33,
+             VTOTAL       = VACTIVE + VFRONT_PORCH + VSYNC + VBACK_PORCH; // 525
+
+   logic [10:0]			     hcount; // Horizontal counter
+                                             // Hcount[10:1] indicates pixel column (0-639)
+   logic 			     endOfLine;
+   
+   always_ff @(posedge clk50 or posedge reset)
+     if (reset)          hcount <= 0;
+     else if (endOfLine) hcount <= 0;
+     else  	         hcount <= hcount + 11'd 1;
+
+   assign endOfLine = hcount == HTOTAL - 1;
+
+   // Vertical counter
+   logic [9:0] 			     vcount;
+   logic 			     endOfField;
+   
+   always_ff @(posedge clk50 or posedge reset)
+     if (reset)          vcount <= 0;
+     else if (endOfLine)
+       if (endOfField)   vcount <= 0;
+       else              vcount <= vcount + 10'd 1;
+
+   assign endOfField = vcount == VTOTAL - 1;
+
+   // Horizontal sync: from 0x520 to 0x5DF (0x57F)
+   // 101 0010 0000 to 101 1101 1111
+   assign VGA_HS = !( (hcount[10:8] == 3'b101) & !(hcount[7:5] == 3'b111));
+   assign VGA_VS = !( vcount[9:1] == (VACTIVE + VFRONT_PORCH) / 2);
+
+   assign VGA_SYNC_n = 1; // For adding sync to video signals; not used for VGA
+   
+   // Horizontal active: 0 to 1279     Vertical active: 0 to 479
+   // 101 0000 0000  1280	       01 1110 0000  480
+   // 110 0011 1111  1599	       10 0000 1100  524
+   assign VGA_BLANK_n = !( hcount[10] & (hcount[9] | hcount[8]) ) &
+			!( vcount[9] | (vcount[8:5] == 4'b1111) );   
+
+   /* VGA_CLK is 25 MHz
+    *             __    __    __
+    * clk50    __|  |__|  |__|
+    *        
+    *             _____       __
+    * hcount[0]__|     |_____|
+    */
+   assign VGA_CLK = hcount[0]; // 25 MHz clock: pixel latched on rising edge
+
+   /* 
+    *    0 1 2 3 4 5 6 7
+    * 
+    * 0  afa a a a ab
+    * 1  f         b
+    * 2  f         b
+    * 3  f         b
+    * 4  f         b
+    * 5  f         b
+    * 6 efgggggggggbc 
+    * 7  e         c
+    * 8  e         c
+    * 9  e         c
+    * 10 e         c
+    * 11 e         c
+    * 12 edddddddddc
+    * 13
+    * 14             h
+    * 15
+    *
+    * 640 x 480
+    * 
+    * Each seven-segment "pixel" is 8x8: 64 pixels across, 512 pixels for
+    * 8 characters being displayed
+    * 64 + 512 + 64 = 640  Start in column 64, end in column 576
+    * 
+    * 128 pixels high: start at row 128, end at row 256
+    * 128 + 128 + 224 = 480  Start in row 128
+    */
+
+   logic[479:0] inScreen;
+   logic[479:0] color;
+	/*
+	integer i;
+	initial begin
+   for (i=0; i<17;i++)
+   inScreen[i] <= ((vcount == i)&(hcount[10:1]<=screen[i][19:10])&(hcount[10:1]>=screen[i][9:0]));
+   
+   end
+	
+	integer j;
+	initial begin
+   for (j=0; j<17;j++)
+	color[j] <= ((screen[j][20]==1));
+   end
+	*/
+	
+	assign inScreen[0]= ((vcount == 0)&(hcount[10:1]<=screen[0][19:10])&(hcount[10:1]>=screen[0][9:0]));
+	assign inScreen[1]= ((vcount == 1)&(hcount[10:1]<=screen[1][19:10])&(hcount[10:1]>=screen[1][9:0]));
+	assign inScreen[2]= ((vcount == 2)&(hcount[10:1]<=screen[2][19:10])&(hcount[10:1]>=screen[2][9:0]));
+	assign inScreen[3]= ((vcount == 3)&(hcount[10:1]<=screen[3][19:10])&(hcount[10:1]>=screen[3][9:0]));
+	assign inScreen[4]= ((vcount == 4)&(hcount[10:1]<=screen[4][19:10])&(hcount[10:1]>=screen[4][9:0]));
+	assign inScreen[5]= ((vcount == 5)&(hcount[10:1]<=screen[5][19:10])&(hcount[10:1]>=screen[5][9:0]));
+	assign inScreen[6]= ((vcount == 6)&(hcount[10:1]<=screen[6][19:10])&(hcount[10:1]>=screen[6][9:0]));
+	assign inScreen[7]= ((vcount == 7)&(hcount[10:1]<=screen[7][19:10])&(hcount[10:1]>=screen[7][9:0]));
+	assign inScreen[8]= ((vcount == 8)&(hcount[10:1]<=screen[8][19:10])&(hcount[10:1]>=screen[8][9:0]));
+	assign inScreen[9]= ((vcount == 9)&(hcount[10:1]<=screen[9][19:10])&(hcount[10:1]>=screen[9][9:0]));
+	assign inScreen[10]= ((vcount == 10)&(hcount[10:1]<=screen[10][19:10])&(hcount[10:1]>=screen[10][9:0]));
+	assign inScreen[11]= ((vcount == 11)&(hcount[10:1]<=screen[11][19:10])&(hcount[10:1]>=screen[11][9:0]));
+	assign inScreen[12]= ((vcount == 12)&(hcount[10:1]<=screen[12][19:10])&(hcount[10:1]>=screen[12][9:0]));
+	assign inScreen[13]= ((vcount == 13)&(hcount[10:1]<=screen[13][19:10])&(hcount[10:1]>=screen[13][9:0]));
+	assign inScreen[14]= ((vcount == 14)&(hcount[10:1]<=screen[14][19:10])&(hcount[10:1]>=screen[14][9:0]));
+	assign inScreen[15]= ((vcount == 15)&(hcount[10:1]<=screen[15][19:10])&(hcount[10:1]>=screen[15][9:0]));
+	assign inScreen[16]= ((vcount == 16)&(hcount[10:1]<=screen[16][19:10])&(hcount[10:1]>=screen[16][9:0]));
+	assign inScreen[17]= ((vcount == 17)&(hcount[10:1]<=screen[17][19:10])&(hcount[10:1]>=screen[17][9:0]));
+	assign inScreen[18]= ((vcount == 18)&(hcount[10:1]<=screen[18][19:10])&(hcount[10:1]>=screen[18][9:0]));
+	assign inScreen[19]= ((vcount == 19)&(hcount[10:1]<=screen[19][19:10])&(hcount[10:1]>=screen[19][9:0]));
+	assign inScreen[20]= ((vcount == 20)&(hcount[10:1]<=screen[20][19:10])&(hcount[10:1]>=screen[20][9:0]));
+	assign inScreen[21]= ((vcount == 21)&(hcount[10:1]<=screen[21][19:10])&(hcount[10:1]>=screen[21][9:0]));
+	assign inScreen[22]= ((vcount == 22)&(hcount[10:1]<=screen[22][19:10])&(hcount[10:1]>=screen[22][9:0]));
+	assign inScreen[23]= ((vcount == 23)&(hcount[10:1]<=screen[23][19:10])&(hcount[10:1]>=screen[23][9:0]));
+	assign inScreen[24]= ((vcount == 24)&(hcount[10:1]<=screen[24][19:10])&(hcount[10:1]>=screen[24][9:0]));
+	assign inScreen[25]= ((vcount == 25)&(hcount[10:1]<=screen[25][19:10])&(hcount[10:1]>=screen[25][9:0]));
+	assign inScreen[26]= ((vcount == 26)&(hcount[10:1]<=screen[26][19:10])&(hcount[10:1]>=screen[26][9:0]));
+	assign inScreen[27]= ((vcount == 27)&(hcount[10:1]<=screen[27][19:10])&(hcount[10:1]>=screen[27][9:0]));
+	assign inScreen[28]= ((vcount == 28)&(hcount[10:1]<=screen[28][19:10])&(hcount[10:1]>=screen[28][9:0]));
+	assign inScreen[29]= ((vcount == 29)&(hcount[10:1]<=screen[29][19:10])&(hcount[10:1]>=screen[29][9:0]));
+	assign inScreen[30]= ((vcount == 30)&(hcount[10:1]<=screen[30][19:10])&(hcount[10:1]>=screen[30][9:0]));
+	assign inScreen[31]= ((vcount == 31)&(hcount[10:1]<=screen[31][19:10])&(hcount[10:1]>=screen[31][9:0]));
+	assign inScreen[32]= ((vcount == 32)&(hcount[10:1]<=screen[32][19:10])&(hcount[10:1]>=screen[32][9:0]));
+	assign inScreen[33]= ((vcount == 33)&(hcount[10:1]<=screen[33][19:10])&(hcount[10:1]>=screen[33][9:0]));
+        assign inScreen[34]= ((vcount == 34)&(hcount[10:1]<=screen[34][19:10])&(hcount[10:1]>=screen[34][9:0]));
+	assign inScreen[35]= ((vcount == 35)&(hcount[10:1]<=screen[35][19:10])&(hcount[10:1]>=screen[35][9:0]));
+	assign inScreen[36]= ((vcount == 36)&(hcount[10:1]<=screen[36][19:10])&(hcount[10:1]>=screen[36][9:0]));
+	assign inScreen[37]= ((vcount == 37)&(hcount[10:1]<=screen[37][19:10])&(hcount[10:1]>=screen[37][9:0]));
+	assign inScreen[38]= ((vcount == 38)&(hcount[10:1]<=screen[38][19:10])&(hcount[10:1]>=screen[38][9:0]));
+	assign inScreen[39]= ((vcount == 39)&(hcount[10:1]<=screen[39][19:10])&(hcount[10:1]>=screen[39][9:0]));
+	assign inScreen[40]= ((vcount == 40)&(hcount[10:1]<=screen[40][19:10])&(hcount[10:1]>=screen[40][9:0]));
+	assign inScreen[41]= ((vcount == 41)&(hcount[10:1]<=screen[41][19:10])&(hcount[10:1]>=screen[41][9:0]));
+	assign inScreen[42]= ((vcount == 42)&(hcount[10:1]<=screen[42][19:10])&(hcount[10:1]>=screen[42][9:0]));
+	assign inScreen[43]= ((vcount == 43)&(hcount[10:1]<=screen[43][19:10])&(hcount[10:1]>=screen[43][9:0]));
+	assign inScreen[44]= ((vcount == 44)&(hcount[10:1]<=screen[44][19:10])&(hcount[10:1]>=screen[44][9:0]));
+	assign inScreen[45]= ((vcount == 45)&(hcount[10:1]<=screen[45][19:10])&(hcount[10:1]>=screen[45][9:0]));
+	assign inScreen[46]= ((vcount == 46)&(hcount[10:1]<=screen[46][19:10])&(hcount[10:1]>=screen[46][9:0]));
+	assign inScreen[47]= ((vcount == 47)&(hcount[10:1]<=screen[47][19:10])&(hcount[10:1]>=screen[47][9:0]));
+	assign inScreen[48]= ((vcount == 48)&(hcount[10:1]<=screen[48][19:10])&(hcount[10:1]>=screen[48][9:0]));
+	assign inScreen[49]= ((vcount == 49)&(hcount[10:1]<=screen[49][19:10])&(hcount[10:1]>=screen[49][9:0]));
+	assign inScreen[50]= ((vcount == 50)&(hcount[10:1]<=screen[50][19:10])&(hcount[10:1]>=screen[50][9:0]));
+	assign inScreen[51]= ((vcount == 51)&(hcount[10:1]<=screen[51][19:10])&(hcount[10:1]>=screen[51][9:0]));
+	assign inScreen[52]= ((vcount == 52)&(hcount[10:1]<=screen[52][19:10])&(hcount[10:1]>=screen[52][9:0]));
+	assign inScreen[53]= ((vcount == 53)&(hcount[10:1]<=screen[53][19:10])&(hcount[10:1]>=screen[53][9:0]));
+	assign inScreen[54]= ((vcount == 54)&(hcount[10:1]<=screen[54][19:10])&(hcount[10:1]>=screen[54][9:0]));
+	assign inScreen[55]= ((vcount == 55)&(hcount[10:1]<=screen[55][19:10])&(hcount[10:1]>=screen[55][9:0]));
+	assign inScreen[56]= ((vcount == 56)&(hcount[10:1]<=screen[56][19:10])&(hcount[10:1]>=screen[56][9:0]));
+	assign inScreen[57]= ((vcount == 57)&(hcount[10:1]<=screen[57][19:10])&(hcount[10:1]>=screen[57][9:0]));
+	assign inScreen[58]= ((vcount == 58)&(hcount[10:1]<=screen[58][19:10])&(hcount[10:1]>=screen[58][9:0]));
+	assign inScreen[59]= ((vcount == 59)&(hcount[10:1]<=screen[59][19:10])&(hcount[10:1]>=screen[59][9:0]));
+	assign inScreen[60]= ((vcount == 60)&(hcount[10:1]<=screen[60][19:10])&(hcount[10:1]>=screen[60][9:0]));
+	assign inScreen[61]= ((vcount == 61)&(hcount[10:1]<=screen[61][19:10])&(hcount[10:1]>=screen[61][9:0]));
+	assign inScreen[62]= ((vcount == 62)&(hcount[10:1]<=screen[62][19:10])&(hcount[10:1]>=screen[62][9:0]));
+	assign inScreen[63]= ((vcount == 63)&(hcount[10:1]<=screen[63][19:10])&(hcount[10:1]>=screen[63][9:0]));
+	assign inScreen[64]= ((vcount == 64)&(hcount[10:1]<=screen[64][19:10])&(hcount[10:1]>=screen[64][9:0]));
+	assign inScreen[65]= ((vcount == 65)&(hcount[10:1]<=screen[65][19:10])&(hcount[10:1]>=screen[65][9:0]));
+	assign inScreen[66]= ((vcount == 66)&(hcount[10:1]<=screen[66][19:10])&(hcount[10:1]>=screen[66][9:0]));
+	assign inScreen[67]= ((vcount == 67)&(hcount[10:1]<=screen[67][19:10])&(hcount[10:1]>=screen[67][9:0]));
+        assign inScreen[68]= ((vcount == 68)&(hcount[10:1]<=screen[68][19:10])&(hcount[10:1]>=screen[68][9:0]));
+	assign inScreen[69]= ((vcount == 69)&(hcount[10:1]<=screen[69][19:10])&(hcount[10:1]>=screen[69][9:0]));
+	assign inScreen[70]= ((vcount == 70)&(hcount[10:1]<=screen[70][19:10])&(hcount[10:1]>=screen[70][9:0]));
+	assign inScreen[71]= ((vcount == 71)&(hcount[10:1]<=screen[71][19:10])&(hcount[10:1]>=screen[71][9:0]));
+	assign inScreen[72]= ((vcount == 72)&(hcount[10:1]<=screen[72][19:10])&(hcount[10:1]>=screen[72][9:0]));
+	assign inScreen[73]= ((vcount == 73)&(hcount[10:1]<=screen[73][19:10])&(hcount[10:1]>=screen[73][9:0]));
+	assign inScreen[74]= ((vcount == 74)&(hcount[10:1]<=screen[74][19:10])&(hcount[10:1]>=screen[74][9:0]));
+	assign inScreen[75]= ((vcount == 75)&(hcount[10:1]<=screen[75][19:10])&(hcount[10:1]>=screen[75][9:0]));
+	assign inScreen[76]= ((vcount == 76)&(hcount[10:1]<=screen[76][19:10])&(hcount[10:1]>=screen[76][9:0]));
+	assign inScreen[77]= ((vcount == 77)&(hcount[10:1]<=screen[77][19:10])&(hcount[10:1]>=screen[77][9:0]));
+	assign inScreen[78]= ((vcount == 78)&(hcount[10:1]<=screen[78][19:10])&(hcount[10:1]>=screen[78][9:0]));
+	assign inScreen[79]= ((vcount == 79)&(hcount[10:1]<=screen[79][19:10])&(hcount[10:1]>=screen[79][9:0]));
+	assign inScreen[80]= ((vcount == 80)&(hcount[10:1]<=screen[80][19:10])&(hcount[10:1]>=screen[80][9:0]));
+	assign inScreen[81]= ((vcount == 81)&(hcount[10:1]<=screen[81][19:10])&(hcount[10:1]>=screen[81][9:0]));
+	assign inScreen[82]= ((vcount == 82)&(hcount[10:1]<=screen[82][19:10])&(hcount[10:1]>=screen[82][9:0]));
+	assign inScreen[83]= ((vcount == 83)&(hcount[10:1]<=screen[83][19:10])&(hcount[10:1]>=screen[83][9:0]));
+	assign inScreen[84]= ((vcount == 84)&(hcount[10:1]<=screen[84][19:10])&(hcount[10:1]>=screen[84][9:0]));
+	assign inScreen[85]= ((vcount == 85)&(hcount[10:1]<=screen[85][19:10])&(hcount[10:1]>=screen[85][9:0]));
+	assign inScreen[86]= ((vcount == 86)&(hcount[10:1]<=screen[86][19:10])&(hcount[10:1]>=screen[86][9:0]));
+	assign inScreen[87]= ((vcount == 87)&(hcount[10:1]<=screen[87][19:10])&(hcount[10:1]>=screen[87][9:0]));
+	assign inScreen[88]= ((vcount == 88)&(hcount[10:1]<=screen[88][19:10])&(hcount[10:1]>=screen[88][9:0]));
+	assign inScreen[89]= ((vcount == 89)&(hcount[10:1]<=screen[89][19:10])&(hcount[10:1]>=screen[89][9:0]));
+	assign inScreen[90]= ((vcount == 90)&(hcount[10:1]<=screen[90][19:10])&(hcount[10:1]>=screen[90][9:0]));
+	assign inScreen[91]= ((vcount == 91)&(hcount[10:1]<=screen[91][19:10])&(hcount[10:1]>=screen[91][9:0]));
+	assign inScreen[92]= ((vcount == 92)&(hcount[10:1]<=screen[92][19:10])&(hcount[10:1]>=screen[92][9:0]));
+	assign inScreen[93]= ((vcount == 93)&(hcount[10:1]<=screen[93][19:10])&(hcount[10:1]>=screen[93][9:0]));
+	assign inScreen[94]= ((vcount == 94)&(hcount[10:1]<=screen[94][19:10])&(hcount[10:1]>=screen[94][9:0]));
+	assign inScreen[95]= ((vcount == 95)&(hcount[10:1]<=screen[95][19:10])&(hcount[10:1]>=screen[95][9:0]));
+	assign inScreen[96]= ((vcount == 96)&(hcount[10:1]<=screen[96][19:10])&(hcount[10:1]>=screen[96][9:0]));
+	assign inScreen[97]= ((vcount == 97)&(hcount[10:1]<=screen[97][19:10])&(hcount[10:1]>=screen[97][9:0]));
+	assign inScreen[98]= ((vcount == 98)&(hcount[10:1]<=screen[98][19:10])&(hcount[10:1]>=screen[98][9:0]));
+	assign inScreen[99]= ((vcount == 99)&(hcount[10:1]<=screen[99][19:10])&(hcount[10:1]>=screen[99][9:0]));
+	assign inScreen[100]= ((vcount == 100)&(hcount[10:1]<=screen[100][19:10])&(hcount[10:1]>=screen[100][9:0]));
+	assign inScreen[101]= ((vcount == 101)&(hcount[10:1]<=screen[101][19:10])&(hcount[10:1]>=screen[101][9:0]));
+	assign inScreen[102]= ((vcount == 102)&(hcount[10:1]<=screen[102][19:10])&(hcount[10:1]>=screen[102][9:0]));
+	assign inScreen[103]= ((vcount == 103)&(hcount[10:1]<=screen[103][19:10])&(hcount[10:1]>=screen[103][9:0]));
+	assign inScreen[104]= ((vcount == 104)&(hcount[10:1]<=screen[104][19:10])&(hcount[10:1]>=screen[104][9:0]));
+	assign inScreen[105]= ((vcount == 105)&(hcount[10:1]<=screen[105][19:10])&(hcount[10:1]>=screen[105][9:0]));
+	assign inScreen[106]= ((vcount == 106)&(hcount[10:1]<=screen[106][19:10])&(hcount[10:1]>=screen[106][9:0]));
+	assign inScreen[107]= ((vcount == 107)&(hcount[10:1]<=screen[107][19:10])&(hcount[10:1]>=screen[107][9:0]));
+	assign inScreen[108]= ((vcount == 108)&(hcount[10:1]<=screen[108][19:10])&(hcount[10:1]>=screen[108][9:0]));
+	assign inScreen[109]= ((vcount == 109)&(hcount[10:1]<=screen[109][19:10])&(hcount[10:1]>=screen[109][9:0]));
+	assign inScreen[110]= ((vcount == 110)&(hcount[10:1]<=screen[110][19:10])&(hcount[10:1]>=screen[110][9:0]));
+	assign inScreen[111]= ((vcount == 111)&(hcount[10:1]<=screen[111][19:10])&(hcount[10:1]>=screen[111][9:0]));
+	assign inScreen[112]= ((vcount == 112)&(hcount[10:1]<=screen[112][19:10])&(hcount[10:1]>=screen[112][9:0]));
+	assign inScreen[113]= ((vcount == 113)&(hcount[10:1]<=screen[113][19:10])&(hcount[10:1]>=screen[113][9:0]));
+	assign inScreen[114]= ((vcount == 114)&(hcount[10:1]<=screen[114][19:10])&(hcount[10:1]>=screen[114][9:0]));
+	assign inScreen[115]= ((vcount == 115)&(hcount[10:1]<=screen[115][19:10])&(hcount[10:1]>=screen[115][9:0]));
+	assign inScreen[116]= ((vcount == 116)&(hcount[10:1]<=screen[116][19:10])&(hcount[10:1]>=screen[116][9:0]));
+	assign inScreen[117]= ((vcount == 117)&(hcount[10:1]<=screen[117][19:10])&(hcount[10:1]>=screen[117][9:0]));
+	assign inScreen[118]= ((vcount == 118)&(hcount[10:1]<=screen[118][19:10])&(hcount[10:1]>=screen[118][9:0]));
+	assign inScreen[119]= ((vcount == 119)&(hcount[10:1]<=screen[119][19:10])&(hcount[10:1]>=screen[119][9:0]));
+	assign inScreen[120]= ((vcount == 120)&(hcount[10:1]<=screen[120][19:10])&(hcount[10:1]>=screen[120][9:0]));
+	assign inScreen[121]= ((vcount == 121)&(hcount[10:1]<=screen[121][19:10])&(hcount[10:1]>=screen[121][9:0]));
+	assign inScreen[122]= ((vcount == 122)&(hcount[10:1]<=screen[122][19:10])&(hcount[10:1]>=screen[122][9:0]));
+	assign inScreen[123]= ((vcount == 123)&(hcount[10:1]<=screen[123][19:10])&(hcount[10:1]>=screen[123][9:0]));
+	assign inScreen[124]= ((vcount == 124)&(hcount[10:1]<=screen[124][19:10])&(hcount[10:1]>=screen[124][9:0]));
+	assign inScreen[125]= ((vcount == 125)&(hcount[10:1]<=screen[125][19:10])&(hcount[10:1]>=screen[125][9:0]));
+	assign inScreen[126]= ((vcount == 126)&(hcount[10:1]<=screen[126][19:10])&(hcount[10:1]>=screen[126][9:0]));
+	assign inScreen[127]= ((vcount == 127)&(hcount[10:1]<=screen[127][19:10])&(hcount[10:1]>=screen[127][9:0]));
+	assign inScreen[128]= ((vcount == 128)&(hcount[10:1]<=screen[128][19:10])&(hcount[10:1]>=screen[128][9:0]));
+	assign inScreen[129]= ((vcount == 129)&(hcount[10:1]<=screen[129][19:10])&(hcount[10:1]>=screen[129][9:0]));
+	assign inScreen[130]= ((vcount == 130)&(hcount[10:1]<=screen[130][19:10])&(hcount[10:1]>=screen[130][9:0]));
+	assign inScreen[131]= ((vcount == 131)&(hcount[10:1]<=screen[131][19:10])&(hcount[10:1]>=screen[131][9:0]));
+	assign inScreen[132]= ((vcount == 132)&(hcount[10:1]<=screen[132][19:10])&(hcount[10:1]>=screen[132][9:0]));
+	assign inScreen[133]= ((vcount == 133)&(hcount[10:1]<=screen[133][19:10])&(hcount[10:1]>=screen[133][9:0]));
+        assign inScreen[134]= ((vcount == 134)&(hcount[10:1]<=screen[134][19:10])&(hcount[10:1]>=screen[134][9:0]));
+	assign inScreen[135]= ((vcount == 135)&(hcount[10:1]<=screen[135][19:10])&(hcount[10:1]>=screen[135][9:0]));
+	assign inScreen[136]= ((vcount == 136)&(hcount[10:1]<=screen[136][19:10])&(hcount[10:1]>=screen[136][9:0]));
+	assign inScreen[137]= ((vcount == 137)&(hcount[10:1]<=screen[137][19:10])&(hcount[10:1]>=screen[137][9:0]));
+	assign inScreen[138]= ((vcount == 138)&(hcount[10:1]<=screen[138][19:10])&(hcount[10:1]>=screen[138][9:0]));
+	assign inScreen[139]= ((vcount == 139)&(hcount[10:1]<=screen[139][19:10])&(hcount[10:1]>=screen[139][9:0]));
+	assign inScreen[140]= ((vcount == 140)&(hcount[10:1]<=screen[140][19:10])&(hcount[10:1]>=screen[140][9:0]));
+	assign inScreen[141]= ((vcount == 141)&(hcount[10:1]<=screen[141][19:10])&(hcount[10:1]>=screen[141][9:0]));
+	assign inScreen[142]= ((vcount == 142)&(hcount[10:1]<=screen[142][19:10])&(hcount[10:1]>=screen[142][9:0]));
+	assign inScreen[143]= ((vcount == 143)&(hcount[10:1]<=screen[143][19:10])&(hcount[10:1]>=screen[143][9:0]));
+	assign inScreen[144]= ((vcount == 144)&(hcount[10:1]<=screen[144][19:10])&(hcount[10:1]>=screen[144][9:0]));
+	assign inScreen[145]= ((vcount == 145)&(hcount[10:1]<=screen[145][19:10])&(hcount[10:1]>=screen[145][9:0]));
+	assign inScreen[146]= ((vcount == 146)&(hcount[10:1]<=screen[146][19:10])&(hcount[10:1]>=screen[146][9:0]));
+	assign inScreen[147]= ((vcount == 147)&(hcount[10:1]<=screen[147][19:10])&(hcount[10:1]>=screen[147][9:0]));
+	assign inScreen[148]= ((vcount == 148)&(hcount[10:1]<=screen[148][19:10])&(hcount[10:1]>=screen[148][9:0]));
+	assign inScreen[149]= ((vcount == 149)&(hcount[10:1]<=screen[149][19:10])&(hcount[10:1]>=screen[149][9:0]));
+	assign inScreen[150]= ((vcount == 150)&(hcount[10:1]<=screen[150][19:10])&(hcount[10:1]>=screen[150][9:0]));
+	assign inScreen[151]= ((vcount == 151)&(hcount[10:1]<=screen[151][19:10])&(hcount[10:1]>=screen[151][9:0]));
+	assign inScreen[152]= ((vcount == 152)&(hcount[10:1]<=screen[152][19:10])&(hcount[10:1]>=screen[152][9:0]));
+	assign inScreen[153]= ((vcount == 153)&(hcount[10:1]<=screen[153][19:10])&(hcount[10:1]>=screen[153][9:0]));
+	assign inScreen[154]= ((vcount == 154)&(hcount[10:1]<=screen[154][19:10])&(hcount[10:1]>=screen[154][9:0]));
+	assign inScreen[155]= ((vcount == 155)&(hcount[10:1]<=screen[155][19:10])&(hcount[10:1]>=screen[155][9:0]));
+	assign inScreen[156]= ((vcount == 156)&(hcount[10:1]<=screen[156][19:10])&(hcount[10:1]>=screen[156][9:0]));
+	assign inScreen[157]= ((vcount == 157)&(hcount[10:1]<=screen[157][19:10])&(hcount[10:1]>=screen[157][9:0]));
+	assign inScreen[158]= ((vcount == 158)&(hcount[10:1]<=screen[158][19:10])&(hcount[10:1]>=screen[158][9:0]));
+	assign inScreen[159]= ((vcount == 159)&(hcount[10:1]<=screen[159][19:10])&(hcount[10:1]>=screen[159][9:0]));
+	assign inScreen[160]= ((vcount == 160)&(hcount[10:1]<=screen[160][19:10])&(hcount[10:1]>=screen[160][9:0]));
+	assign inScreen[161]= ((vcount == 161)&(hcount[10:1]<=screen[161][19:10])&(hcount[10:1]>=screen[161][9:0]));
+	assign inScreen[162]= ((vcount == 162)&(hcount[10:1]<=screen[162][19:10])&(hcount[10:1]>=screen[162][9:0]));
+	assign inScreen[163]= ((vcount == 163)&(hcount[10:1]<=screen[163][19:10])&(hcount[10:1]>=screen[163][9:0]));
+	assign inScreen[164]= ((vcount == 164)&(hcount[10:1]<=screen[164][19:10])&(hcount[10:1]>=screen[164][9:0]));
+	assign inScreen[165]= ((vcount == 165)&(hcount[10:1]<=screen[165][19:10])&(hcount[10:1]>=screen[165][9:0]));
+	assign inScreen[166]= ((vcount == 166)&(hcount[10:1]<=screen[166][19:10])&(hcount[10:1]>=screen[166][9:0]));
+	assign inScreen[167]= ((vcount == 167)&(hcount[10:1]<=screen[167][19:10])&(hcount[10:1]>=screen[167][9:0]));
+        assign inScreen[168]= ((vcount == 168)&(hcount[10:1]<=screen[168][19:10])&(hcount[10:1]>=screen[168][9:0]));
+	assign inScreen[169]= ((vcount == 169)&(hcount[10:1]<=screen[169][19:10])&(hcount[10:1]>=screen[169][9:0]));
+	assign inScreen[170]= ((vcount == 170)&(hcount[10:1]<=screen[170][19:10])&(hcount[10:1]>=screen[170][9:0]));
+	assign inScreen[171]= ((vcount == 171)&(hcount[10:1]<=screen[171][19:10])&(hcount[10:1]>=screen[171][9:0]));
+	assign inScreen[172]= ((vcount == 172)&(hcount[10:1]<=screen[172][19:10])&(hcount[10:1]>=screen[172][9:0]));
+	assign inScreen[173]= ((vcount == 173)&(hcount[10:1]<=screen[173][19:10])&(hcount[10:1]>=screen[173][9:0]));
+	assign inScreen[174]= ((vcount == 174)&(hcount[10:1]<=screen[174][19:10])&(hcount[10:1]>=screen[174][9:0]));
+	assign inScreen[175]= ((vcount == 175)&(hcount[10:1]<=screen[175][19:10])&(hcount[10:1]>=screen[175][9:0]));
+	assign inScreen[176]= ((vcount == 176)&(hcount[10:1]<=screen[176][19:10])&(hcount[10:1]>=screen[176][9:0]));
+	assign inScreen[177]= ((vcount == 177)&(hcount[10:1]<=screen[177][19:10])&(hcount[10:1]>=screen[177][9:0]));
+	assign inScreen[178]= ((vcount == 178)&(hcount[10:1]<=screen[178][19:10])&(hcount[10:1]>=screen[178][9:0]));
+	assign inScreen[179]= ((vcount == 179)&(hcount[10:1]<=screen[179][19:10])&(hcount[10:1]>=screen[179][9:0]));
+	assign inScreen[180]= ((vcount == 180)&(hcount[10:1]<=screen[180][19:10])&(hcount[10:1]>=screen[180][9:0]));
+	assign inScreen[181]= ((vcount == 181)&(hcount[10:1]<=screen[181][19:10])&(hcount[10:1]>=screen[181][9:0]));
+	assign inScreen[182]= ((vcount == 182)&(hcount[10:1]<=screen[182][19:10])&(hcount[10:1]>=screen[182][9:0]));
+	assign inScreen[183]= ((vcount == 183)&(hcount[10:1]<=screen[183][19:10])&(hcount[10:1]>=screen[183][9:0]));
+	assign inScreen[184]= ((vcount == 184)&(hcount[10:1]<=screen[184][19:10])&(hcount[10:1]>=screen[184][9:0]));
+	assign inScreen[185]= ((vcount == 185)&(hcount[10:1]<=screen[185][19:10])&(hcount[10:1]>=screen[185][9:0]));
+	assign inScreen[186]= ((vcount == 186)&(hcount[10:1]<=screen[186][19:10])&(hcount[10:1]>=screen[186][9:0]));
+	assign inScreen[187]= ((vcount == 187)&(hcount[10:1]<=screen[187][19:10])&(hcount[10:1]>=screen[187][9:0]));
+	assign inScreen[188]= ((vcount == 188)&(hcount[10:1]<=screen[188][19:10])&(hcount[10:1]>=screen[188][9:0]));
+	assign inScreen[189]= ((vcount == 189)&(hcount[10:1]<=screen[189][19:10])&(hcount[10:1]>=screen[189][9:0]));
+	assign inScreen[190]= ((vcount == 190)&(hcount[10:1]<=screen[190][19:10])&(hcount[10:1]>=screen[190][9:0]));
+	assign inScreen[191]= ((vcount == 191)&(hcount[10:1]<=screen[191][19:10])&(hcount[10:1]>=screen[191][9:0]));
+	assign inScreen[192]= ((vcount == 192)&(hcount[10:1]<=screen[192][19:10])&(hcount[10:1]>=screen[192][9:0]));
+	assign inScreen[193]= ((vcount == 193)&(hcount[10:1]<=screen[193][19:10])&(hcount[10:1]>=screen[193][9:0]));
+	assign inScreen[194]= ((vcount == 194)&(hcount[10:1]<=screen[194][19:10])&(hcount[10:1]>=screen[194][9:0]));
+	assign inScreen[195]= ((vcount == 195)&(hcount[10:1]<=screen[195][19:10])&(hcount[10:1]>=screen[195][9:0]));
+	assign inScreen[196]= ((vcount == 196)&(hcount[10:1]<=screen[196][19:10])&(hcount[10:1]>=screen[196][9:0]));
+	assign inScreen[197]= ((vcount == 197)&(hcount[10:1]<=screen[197][19:10])&(hcount[10:1]>=screen[197][9:0]));
+	assign inScreen[198]= ((vcount == 198)&(hcount[10:1]<=screen[198][19:10])&(hcount[10:1]>=screen[198][9:0]));
+	assign inScreen[199]= ((vcount == 199)&(hcount[10:1]<=screen[199][19:10])&(hcount[10:1]>=screen[199][9:0]));
+	assign inScreen[200]= ((vcount == 200)&(hcount[10:1]<=screen[200][19:10])&(hcount[10:1]>=screen[200][9:0]));
+	assign inScreen[201]= ((vcount == 201)&(hcount[10:1]<=screen[201][19:10])&(hcount[10:1]>=screen[201][9:0]));
+	assign inScreen[202]= ((vcount == 202)&(hcount[10:1]<=screen[202][19:10])&(hcount[10:1]>=screen[202][9:0]));
+	assign inScreen[203]= ((vcount == 203)&(hcount[10:1]<=screen[203][19:10])&(hcount[10:1]>=screen[203][9:0]));
+	assign inScreen[204]= ((vcount == 204)&(hcount[10:1]<=screen[204][19:10])&(hcount[10:1]>=screen[204][9:0]));
+	assign inScreen[205]= ((vcount == 205)&(hcount[10:1]<=screen[205][19:10])&(hcount[10:1]>=screen[205][9:0]));
+	assign inScreen[206]= ((vcount == 206)&(hcount[10:1]<=screen[206][19:10])&(hcount[10:1]>=screen[206][9:0]));
+	assign inScreen[207]= ((vcount == 207)&(hcount[10:1]<=screen[207][19:10])&(hcount[10:1]>=screen[207][9:0]));
+	assign inScreen[208]= ((vcount == 208)&(hcount[10:1]<=screen[208][19:10])&(hcount[10:1]>=screen[208][9:0]));
+	assign inScreen[209]= ((vcount == 209)&(hcount[10:1]<=screen[209][19:10])&(hcount[10:1]>=screen[209][9:0]));
+	assign inScreen[210]= ((vcount == 210)&(hcount[10:1]<=screen[210][19:10])&(hcount[10:1]>=screen[210][9:0]));
+	assign inScreen[211]= ((vcount == 211)&(hcount[10:1]<=screen[211][19:10])&(hcount[10:1]>=screen[211][9:0]));
+	assign inScreen[212]= ((vcount == 212)&(hcount[10:1]<=screen[212][19:10])&(hcount[10:1]>=screen[212][9:0]));
+	assign inScreen[213]= ((vcount == 213)&(hcount[10:1]<=screen[213][19:10])&(hcount[10:1]>=screen[213][9:0]));
+	assign inScreen[214]= ((vcount == 214)&(hcount[10:1]<=screen[214][19:10])&(hcount[10:1]>=screen[214][9:0]));
+	assign inScreen[215]= ((vcount == 215)&(hcount[10:1]<=screen[215][19:10])&(hcount[10:1]>=screen[215][9:0]));
+	assign inScreen[216]= ((vcount == 216)&(hcount[10:1]<=screen[216][19:10])&(hcount[10:1]>=screen[216][9:0]));
+	assign inScreen[217]= ((vcount == 217)&(hcount[10:1]<=screen[217][19:10])&(hcount[10:1]>=screen[217][9:0]));
+	assign inScreen[218]= ((vcount == 218)&(hcount[10:1]<=screen[218][19:10])&(hcount[10:1]>=screen[218][9:0]));
+	assign inScreen[219]= ((vcount == 219)&(hcount[10:1]<=screen[219][19:10])&(hcount[10:1]>=screen[219][9:0]));
+	assign inScreen[220]= ((vcount == 220)&(hcount[10:1]<=screen[220][19:10])&(hcount[10:1]>=screen[220][9:0]));
+	assign inScreen[221]= ((vcount == 221)&(hcount[10:1]<=screen[221][19:10])&(hcount[10:1]>=screen[221][9:0]));
+	assign inScreen[222]= ((vcount == 222)&(hcount[10:1]<=screen[222][19:10])&(hcount[10:1]>=screen[222][9:0]));
+	assign inScreen[223]= ((vcount == 223)&(hcount[10:1]<=screen[223][19:10])&(hcount[10:1]>=screen[223][9:0]));
+	assign inScreen[224]= ((vcount == 224)&(hcount[10:1]<=screen[224][19:10])&(hcount[10:1]>=screen[224][9:0]));
+	assign inScreen[225]= ((vcount == 225)&(hcount[10:1]<=screen[225][19:10])&(hcount[10:1]>=screen[225][9:0]));
+	assign inScreen[226]= ((vcount == 226)&(hcount[10:1]<=screen[226][19:10])&(hcount[10:1]>=screen[226][9:0]));
+	assign inScreen[227]= ((vcount == 227)&(hcount[10:1]<=screen[227][19:10])&(hcount[10:1]>=screen[227][9:0]));
+	assign inScreen[228]= ((vcount == 228)&(hcount[10:1]<=screen[228][19:10])&(hcount[10:1]>=screen[228][9:0]));
+	assign inScreen[229]= ((vcount == 229)&(hcount[10:1]<=screen[229][19:10])&(hcount[10:1]>=screen[229][9:0]));
+	assign inScreen[230]= ((vcount == 230)&(hcount[10:1]<=screen[230][19:10])&(hcount[10:1]>=screen[230][9:0]));
+	assign inScreen[231]= ((vcount == 231)&(hcount[10:1]<=screen[231][19:10])&(hcount[10:1]>=screen[231][9:0]));
+	assign inScreen[232]= ((vcount == 232)&(hcount[10:1]<=screen[232][19:10])&(hcount[10:1]>=screen[232][9:0]));
+	assign inScreen[233]= ((vcount == 233)&(hcount[10:1]<=screen[233][19:10])&(hcount[10:1]>=screen[233][9:0]));
+        assign inScreen[234]= ((vcount == 234)&(hcount[10:1]<=screen[234][19:10])&(hcount[10:1]>=screen[234][9:0]));
+	assign inScreen[235]= ((vcount == 235)&(hcount[10:1]<=screen[235][19:10])&(hcount[10:1]>=screen[235][9:0]));
+	assign inScreen[236]= ((vcount == 236)&(hcount[10:1]<=screen[236][19:10])&(hcount[10:1]>=screen[236][9:0]));
+	assign inScreen[237]= ((vcount == 237)&(hcount[10:1]<=screen[237][19:10])&(hcount[10:1]>=screen[237][9:0]));
+	assign inScreen[238]= ((vcount == 238)&(hcount[10:1]<=screen[238][19:10])&(hcount[10:1]>=screen[238][9:0]));
+	assign inScreen[239]= ((vcount == 239)&(hcount[10:1]<=screen[239][19:10])&(hcount[10:1]>=screen[239][9:0]));
+	assign inScreen[240]= ((vcount == 240)&(hcount[10:1]<=screen[240][19:10])&(hcount[10:1]>=screen[240][9:0]));
+	assign inScreen[241]= ((vcount == 241)&(hcount[10:1]<=screen[241][19:10])&(hcount[10:1]>=screen[241][9:0]));
+	assign inScreen[242]= ((vcount == 242)&(hcount[10:1]<=screen[242][19:10])&(hcount[10:1]>=screen[242][9:0]));
+	assign inScreen[243]= ((vcount == 243)&(hcount[10:1]<=screen[243][19:10])&(hcount[10:1]>=screen[243][9:0]));
+	assign inScreen[244]= ((vcount == 244)&(hcount[10:1]<=screen[244][19:10])&(hcount[10:1]>=screen[244][9:0]));
+	assign inScreen[245]= ((vcount == 245)&(hcount[10:1]<=screen[245][19:10])&(hcount[10:1]>=screen[245][9:0]));
+	assign inScreen[246]= ((vcount == 246)&(hcount[10:1]<=screen[246][19:10])&(hcount[10:1]>=screen[246][9:0]));
+	assign inScreen[247]= ((vcount == 247)&(hcount[10:1]<=screen[247][19:10])&(hcount[10:1]>=screen[247][9:0]));
+	assign inScreen[248]= ((vcount == 248)&(hcount[10:1]<=screen[248][19:10])&(hcount[10:1]>=screen[248][9:0]));
+	assign inScreen[249]= ((vcount == 249)&(hcount[10:1]<=screen[249][19:10])&(hcount[10:1]>=screen[249][9:0]));
+	assign inScreen[250]= ((vcount == 250)&(hcount[10:1]<=screen[250][19:10])&(hcount[10:1]>=screen[250][9:0]));
+	assign inScreen[251]= ((vcount == 251)&(hcount[10:1]<=screen[251][19:10])&(hcount[10:1]>=screen[251][9:0]));
+	assign inScreen[252]= ((vcount == 252)&(hcount[10:1]<=screen[252][19:10])&(hcount[10:1]>=screen[252][9:0]));
+	assign inScreen[253]= ((vcount == 253)&(hcount[10:1]<=screen[253][19:10])&(hcount[10:1]>=screen[253][9:0]));
+	assign inScreen[254]= ((vcount == 254)&(hcount[10:1]<=screen[254][19:10])&(hcount[10:1]>=screen[254][9:0]));
+	assign inScreen[255]= ((vcount == 255)&(hcount[10:1]<=screen[255][19:10])&(hcount[10:1]>=screen[255][9:0]));
+	assign inScreen[256]= ((vcount == 256)&(hcount[10:1]<=screen[256][19:10])&(hcount[10:1]>=screen[256][9:0]));
+	assign inScreen[257]= ((vcount == 257)&(hcount[10:1]<=screen[257][19:10])&(hcount[10:1]>=screen[257][9:0]));
+	assign inScreen[258]= ((vcount == 258)&(hcount[10:1]<=screen[258][19:10])&(hcount[10:1]>=screen[258][9:0]));
+	assign inScreen[259]= ((vcount == 259)&(hcount[10:1]<=screen[259][19:10])&(hcount[10:1]>=screen[259][9:0]));
+	assign inScreen[260]= ((vcount == 260)&(hcount[10:1]<=screen[260][19:10])&(hcount[10:1]>=screen[260][9:0]));
+	assign inScreen[261]= ((vcount == 261)&(hcount[10:1]<=screen[261][19:10])&(hcount[10:1]>=screen[261][9:0]));
+	assign inScreen[262]= ((vcount == 262)&(hcount[10:1]<=screen[262][19:10])&(hcount[10:1]>=screen[262][9:0]));
+	assign inScreen[263]= ((vcount == 263)&(hcount[10:1]<=screen[263][19:10])&(hcount[10:1]>=screen[263][9:0]));
+	assign inScreen[264]= ((vcount == 264)&(hcount[10:1]<=screen[264][19:10])&(hcount[10:1]>=screen[264][9:0]));
+	assign inScreen[265]= ((vcount == 265)&(hcount[10:1]<=screen[265][19:10])&(hcount[10:1]>=screen[265][9:0]));
+	assign inScreen[266]= ((vcount == 266)&(hcount[10:1]<=screen[266][19:10])&(hcount[10:1]>=screen[266][9:0]));
+	assign inScreen[267]= ((vcount == 267)&(hcount[10:1]<=screen[267][19:10])&(hcount[10:1]>=screen[267][9:0]));
+        assign inScreen[268]= ((vcount == 268)&(hcount[10:1]<=screen[268][19:10])&(hcount[10:1]>=screen[268][9:0]));
+	assign inScreen[269]= ((vcount == 269)&(hcount[10:1]<=screen[269][19:10])&(hcount[10:1]>=screen[269][9:0]));
+	assign inScreen[270]= ((vcount == 270)&(hcount[10:1]<=screen[270][19:10])&(hcount[10:1]>=screen[270][9:0]));
+	assign inScreen[271]= ((vcount == 271)&(hcount[10:1]<=screen[271][19:10])&(hcount[10:1]>=screen[271][9:0]));
+	assign inScreen[272]= ((vcount == 272)&(hcount[10:1]<=screen[272][19:10])&(hcount[10:1]>=screen[272][9:0]));
+	assign inScreen[273]= ((vcount == 273)&(hcount[10:1]<=screen[273][19:10])&(hcount[10:1]>=screen[273][9:0]));
+	assign inScreen[274]= ((vcount == 274)&(hcount[10:1]<=screen[274][19:10])&(hcount[10:1]>=screen[274][9:0]));
+	assign inScreen[275]= ((vcount == 275)&(hcount[10:1]<=screen[275][19:10])&(hcount[10:1]>=screen[275][9:0]));
+	assign inScreen[276]= ((vcount == 276)&(hcount[10:1]<=screen[276][19:10])&(hcount[10:1]>=screen[276][9:0]));
+	assign inScreen[277]= ((vcount == 277)&(hcount[10:1]<=screen[277][19:10])&(hcount[10:1]>=screen[277][9:0]));
+	assign inScreen[278]= ((vcount == 278)&(hcount[10:1]<=screen[278][19:10])&(hcount[10:1]>=screen[278][9:0]));
+	assign inScreen[279]= ((vcount == 279)&(hcount[10:1]<=screen[279][19:10])&(hcount[10:1]>=screen[279][9:0]));
+	assign inScreen[280]= ((vcount == 280)&(hcount[10:1]<=screen[280][19:10])&(hcount[10:1]>=screen[280][9:0]));
+	assign inScreen[281]= ((vcount == 281)&(hcount[10:1]<=screen[281][19:10])&(hcount[10:1]>=screen[281][9:0]));
+	assign inScreen[282]= ((vcount == 282)&(hcount[10:1]<=screen[282][19:10])&(hcount[10:1]>=screen[282][9:0]));
+	assign inScreen[283]= ((vcount == 283)&(hcount[10:1]<=screen[283][19:10])&(hcount[10:1]>=screen[283][9:0]));
+	assign inScreen[284]= ((vcount == 284)&(hcount[10:1]<=screen[284][19:10])&(hcount[10:1]>=screen[284][9:0]));
+	assign inScreen[285]= ((vcount == 285)&(hcount[10:1]<=screen[285][19:10])&(hcount[10:1]>=screen[285][9:0]));
+	assign inScreen[286]= ((vcount == 286)&(hcount[10:1]<=screen[286][19:10])&(hcount[10:1]>=screen[286][9:0]));
+	assign inScreen[287]= ((vcount == 287)&(hcount[10:1]<=screen[287][19:10])&(hcount[10:1]>=screen[287][9:0]));
+	assign inScreen[288]= ((vcount == 288)&(hcount[10:1]<=screen[288][19:10])&(hcount[10:1]>=screen[288][9:0]));
+	assign inScreen[289]= ((vcount == 289)&(hcount[10:1]<=screen[289][19:10])&(hcount[10:1]>=screen[289][9:0]));
+	assign inScreen[290]= ((vcount == 290)&(hcount[10:1]<=screen[290][19:10])&(hcount[10:1]>=screen[290][9:0]));
+	assign inScreen[291]= ((vcount == 291)&(hcount[10:1]<=screen[291][19:10])&(hcount[10:1]>=screen[291][9:0]));
+	assign inScreen[292]= ((vcount == 292)&(hcount[10:1]<=screen[292][19:10])&(hcount[10:1]>=screen[292][9:0]));
+	assign inScreen[293]= ((vcount == 293)&(hcount[10:1]<=screen[293][19:10])&(hcount[10:1]>=screen[293][9:0]));
+	assign inScreen[294]= ((vcount == 294)&(hcount[10:1]<=screen[294][19:10])&(hcount[10:1]>=screen[294][9:0]));
+	assign inScreen[295]= ((vcount == 295)&(hcount[10:1]<=screen[295][19:10])&(hcount[10:1]>=screen[295][9:0]));
+	assign inScreen[296]= ((vcount == 296)&(hcount[10:1]<=screen[296][19:10])&(hcount[10:1]>=screen[296][9:0]));
+	assign inScreen[297]= ((vcount == 297)&(hcount[10:1]<=screen[297][19:10])&(hcount[10:1]>=screen[297][9:0]));
+	assign inScreen[298]= ((vcount == 298)&(hcount[10:1]<=screen[298][19:10])&(hcount[10:1]>=screen[298][9:0]));
+	assign inScreen[299]= ((vcount == 299)&(hcount[10:1]<=screen[299][19:10])&(hcount[10:1]>=screen[299][9:0]));
+	assign inScreen[300]= ((vcount == 300)&(hcount[10:1]<=screen[300][19:10])&(hcount[10:1]>=screen[300][9:0]));
+	assign inScreen[301]= ((vcount == 301)&(hcount[10:1]<=screen[301][19:10])&(hcount[10:1]>=screen[301][9:0]));
+	assign inScreen[302]= ((vcount == 302)&(hcount[10:1]<=screen[302][19:10])&(hcount[10:1]>=screen[302][9:0]));
+	assign inScreen[303]= ((vcount == 303)&(hcount[10:1]<=screen[303][19:10])&(hcount[10:1]>=screen[303][9:0]));
+	assign inScreen[304]= ((vcount == 304)&(hcount[10:1]<=screen[304][19:10])&(hcount[10:1]>=screen[304][9:0]));
+	assign inScreen[305]= ((vcount == 305)&(hcount[10:1]<=screen[305][19:10])&(hcount[10:1]>=screen[305][9:0]));
+	assign inScreen[306]= ((vcount == 306)&(hcount[10:1]<=screen[306][19:10])&(hcount[10:1]>=screen[306][9:0]));
+	assign inScreen[307]= ((vcount == 307)&(hcount[10:1]<=screen[307][19:10])&(hcount[10:1]>=screen[307][9:0]));
+	assign inScreen[308]= ((vcount == 308)&(hcount[10:1]<=screen[308][19:10])&(hcount[10:1]>=screen[308][9:0]));
+	assign inScreen[309]= ((vcount == 309)&(hcount[10:1]<=screen[309][19:10])&(hcount[10:1]>=screen[309][9:0]));
+	assign inScreen[310]= ((vcount == 310)&(hcount[10:1]<=screen[310][19:10])&(hcount[10:1]>=screen[310][9:0]));
+	assign inScreen[311]= ((vcount == 311)&(hcount[10:1]<=screen[311][19:10])&(hcount[10:1]>=screen[311][9:0]));
+	assign inScreen[312]= ((vcount == 312)&(hcount[10:1]<=screen[312][19:10])&(hcount[10:1]>=screen[312][9:0]));
+	assign inScreen[313]= ((vcount == 313)&(hcount[10:1]<=screen[313][19:10])&(hcount[10:1]>=screen[313][9:0]));
+	assign inScreen[314]= ((vcount == 314)&(hcount[10:1]<=screen[314][19:10])&(hcount[10:1]>=screen[314][9:0]));
+	assign inScreen[315]= ((vcount == 315)&(hcount[10:1]<=screen[315][19:10])&(hcount[10:1]>=screen[315][9:0]));
+	assign inScreen[316]= ((vcount == 316)&(hcount[10:1]<=screen[316][19:10])&(hcount[10:1]>=screen[316][9:0]));
+	assign inScreen[317]= ((vcount == 317)&(hcount[10:1]<=screen[317][19:10])&(hcount[10:1]>=screen[317][9:0]));
+	assign inScreen[318]= ((vcount == 318)&(hcount[10:1]<=screen[318][19:10])&(hcount[10:1]>=screen[318][9:0]));
+	assign inScreen[319]= ((vcount == 319)&(hcount[10:1]<=screen[319][19:10])&(hcount[10:1]>=screen[319][9:0]));
+	assign inScreen[320]= ((vcount == 320)&(hcount[10:1]<=screen[320][19:10])&(hcount[10:1]>=screen[320][9:0]));
+	assign inScreen[321]= ((vcount == 321)&(hcount[10:1]<=screen[321][19:10])&(hcount[10:1]>=screen[321][9:0]));
+	assign inScreen[322]= ((vcount == 322)&(hcount[10:1]<=screen[322][19:10])&(hcount[10:1]>=screen[322][9:0]));
+	assign inScreen[323]= ((vcount == 323)&(hcount[10:1]<=screen[323][19:10])&(hcount[10:1]>=screen[323][9:0]));
+	assign inScreen[324]= ((vcount == 324)&(hcount[10:1]<=screen[324][19:10])&(hcount[10:1]>=screen[324][9:0]));
+	assign inScreen[325]= ((vcount == 325)&(hcount[10:1]<=screen[325][19:10])&(hcount[10:1]>=screen[325][9:0]));
+	assign inScreen[326]= ((vcount == 326)&(hcount[10:1]<=screen[326][19:10])&(hcount[10:1]>=screen[326][9:0]));
+	assign inScreen[327]= ((vcount == 327)&(hcount[10:1]<=screen[327][19:10])&(hcount[10:1]>=screen[327][9:0]));
+	assign inScreen[328]= ((vcount == 328)&(hcount[10:1]<=screen[328][19:10])&(hcount[10:1]>=screen[328][9:0]));
+	assign inScreen[329]= ((vcount == 329)&(hcount[10:1]<=screen[329][19:10])&(hcount[10:1]>=screen[329][9:0]));
+	assign inScreen[330]= ((vcount == 330)&(hcount[10:1]<=screen[330][19:10])&(hcount[10:1]>=screen[330][9:0]));
+	assign inScreen[331]= ((vcount == 331)&(hcount[10:1]<=screen[331][19:10])&(hcount[10:1]>=screen[331][9:0]));
+	assign inScreen[332]= ((vcount == 332)&(hcount[10:1]<=screen[332][19:10])&(hcount[10:1]>=screen[332][9:0]));
+	assign inScreen[333]= ((vcount == 333)&(hcount[10:1]<=screen[333][19:10])&(hcount[10:1]>=screen[333][9:0]));
+        assign inScreen[334]= ((vcount == 334)&(hcount[10:1]<=screen[334][19:10])&(hcount[10:1]>=screen[334][9:0]));
+	assign inScreen[335]= ((vcount == 335)&(hcount[10:1]<=screen[335][19:10])&(hcount[10:1]>=screen[335][9:0]));
+	assign inScreen[336]= ((vcount == 336)&(hcount[10:1]<=screen[336][19:10])&(hcount[10:1]>=screen[336][9:0]));
+	assign inScreen[337]= ((vcount == 337)&(hcount[10:1]<=screen[337][19:10])&(hcount[10:1]>=screen[337][9:0]));
+	assign inScreen[338]= ((vcount == 338)&(hcount[10:1]<=screen[338][19:10])&(hcount[10:1]>=screen[338][9:0]));
+	assign inScreen[339]= ((vcount == 339)&(hcount[10:1]<=screen[339][19:10])&(hcount[10:1]>=screen[339][9:0]));
+	assign inScreen[340]= ((vcount == 340)&(hcount[10:1]<=screen[340][19:10])&(hcount[10:1]>=screen[340][9:0]));
+	assign inScreen[341]= ((vcount == 341)&(hcount[10:1]<=screen[341][19:10])&(hcount[10:1]>=screen[341][9:0]));
+	assign inScreen[342]= ((vcount == 342)&(hcount[10:1]<=screen[342][19:10])&(hcount[10:1]>=screen[342][9:0]));
+	assign inScreen[343]= ((vcount == 343)&(hcount[10:1]<=screen[343][19:10])&(hcount[10:1]>=screen[343][9:0]));
+	assign inScreen[344]= ((vcount == 344)&(hcount[10:1]<=screen[344][19:10])&(hcount[10:1]>=screen[344][9:0]));
+	assign inScreen[345]= ((vcount == 345)&(hcount[10:1]<=screen[345][19:10])&(hcount[10:1]>=screen[345][9:0]));
+	assign inScreen[346]= ((vcount == 346)&(hcount[10:1]<=screen[346][19:10])&(hcount[10:1]>=screen[346][9:0]));
+	assign inScreen[347]= ((vcount == 347)&(hcount[10:1]<=screen[347][19:10])&(hcount[10:1]>=screen[347][9:0]));
+	assign inScreen[348]= ((vcount == 348)&(hcount[10:1]<=screen[348][19:10])&(hcount[10:1]>=screen[348][9:0]));
+	assign inScreen[349]= ((vcount == 349)&(hcount[10:1]<=screen[349][19:10])&(hcount[10:1]>=screen[349][9:0]));
+	assign inScreen[350]= ((vcount == 350)&(hcount[10:1]<=screen[350][19:10])&(hcount[10:1]>=screen[350][9:0]));
+	assign inScreen[351]= ((vcount == 351)&(hcount[10:1]<=screen[351][19:10])&(hcount[10:1]>=screen[351][9:0]));
+	assign inScreen[352]= ((vcount == 352)&(hcount[10:1]<=screen[352][19:10])&(hcount[10:1]>=screen[352][9:0]));
+	assign inScreen[353]= ((vcount == 353)&(hcount[10:1]<=screen[353][19:10])&(hcount[10:1]>=screen[353][9:0]));
+	assign inScreen[354]= ((vcount == 354)&(hcount[10:1]<=screen[354][19:10])&(hcount[10:1]>=screen[354][9:0]));
+	assign inScreen[355]= ((vcount == 355)&(hcount[10:1]<=screen[355][19:10])&(hcount[10:1]>=screen[355][9:0]));
+	assign inScreen[356]= ((vcount == 356)&(hcount[10:1]<=screen[356][19:10])&(hcount[10:1]>=screen[356][9:0]));
+	assign inScreen[357]= ((vcount == 357)&(hcount[10:1]<=screen[357][19:10])&(hcount[10:1]>=screen[357][9:0]));
+	assign inScreen[358]= ((vcount == 358)&(hcount[10:1]<=screen[358][19:10])&(hcount[10:1]>=screen[358][9:0]));
+	assign inScreen[359]= ((vcount == 359)&(hcount[10:1]<=screen[359][19:10])&(hcount[10:1]>=screen[359][9:0]));
+	assign inScreen[360]= ((vcount == 360)&(hcount[10:1]<=screen[360][19:10])&(hcount[10:1]>=screen[360][9:0]));
+	assign inScreen[361]= ((vcount == 361)&(hcount[10:1]<=screen[361][19:10])&(hcount[10:1]>=screen[361][9:0]));
+	assign inScreen[362]= ((vcount == 362)&(hcount[10:1]<=screen[362][19:10])&(hcount[10:1]>=screen[362][9:0]));
+	assign inScreen[363]= ((vcount == 363)&(hcount[10:1]<=screen[363][19:10])&(hcount[10:1]>=screen[363][9:0]));
+	assign inScreen[364]= ((vcount == 364)&(hcount[10:1]<=screen[364][19:10])&(hcount[10:1]>=screen[364][9:0]));
+	assign inScreen[365]= ((vcount == 365)&(hcount[10:1]<=screen[365][19:10])&(hcount[10:1]>=screen[365][9:0]));
+	assign inScreen[366]= ((vcount == 366)&(hcount[10:1]<=screen[366][19:10])&(hcount[10:1]>=screen[366][9:0]));
+	assign inScreen[367]= ((vcount == 367)&(hcount[10:1]<=screen[367][19:10])&(hcount[10:1]>=screen[367][9:0]));
+        assign inScreen[368]= ((vcount == 368)&(hcount[10:1]<=screen[368][19:10])&(hcount[10:1]>=screen[368][9:0]));
+	assign inScreen[369]= ((vcount == 369)&(hcount[10:1]<=screen[369][19:10])&(hcount[10:1]>=screen[369][9:0]));
+	assign inScreen[370]= ((vcount == 370)&(hcount[10:1]<=screen[370][19:10])&(hcount[10:1]>=screen[370][9:0]));
+	assign inScreen[371]= ((vcount == 371)&(hcount[10:1]<=screen[371][19:10])&(hcount[10:1]>=screen[371][9:0]));
+	assign inScreen[372]= ((vcount == 372)&(hcount[10:1]<=screen[372][19:10])&(hcount[10:1]>=screen[372][9:0]));
+	assign inScreen[373]= ((vcount == 373)&(hcount[10:1]<=screen[373][19:10])&(hcount[10:1]>=screen[373][9:0]));
+	assign inScreen[374]= ((vcount == 374)&(hcount[10:1]<=screen[374][19:10])&(hcount[10:1]>=screen[374][9:0]));
+	assign inScreen[375]= ((vcount == 375)&(hcount[10:1]<=screen[375][19:10])&(hcount[10:1]>=screen[375][9:0]));
+	assign inScreen[376]= ((vcount == 376)&(hcount[10:1]<=screen[376][19:10])&(hcount[10:1]>=screen[376][9:0]));
+	assign inScreen[377]= ((vcount == 377)&(hcount[10:1]<=screen[377][19:10])&(hcount[10:1]>=screen[377][9:0]));
+	assign inScreen[378]= ((vcount == 378)&(hcount[10:1]<=screen[378][19:10])&(hcount[10:1]>=screen[378][9:0]));
+	assign inScreen[379]= ((vcount == 379)&(hcount[10:1]<=screen[379][19:10])&(hcount[10:1]>=screen[379][9:0]));
+	assign inScreen[380]= ((vcount == 380)&(hcount[10:1]<=screen[380][19:10])&(hcount[10:1]>=screen[380][9:0]));
+	assign inScreen[381]= ((vcount == 381)&(hcount[10:1]<=screen[381][19:10])&(hcount[10:1]>=screen[381][9:0]));
+	assign inScreen[382]= ((vcount == 382)&(hcount[10:1]<=screen[382][19:10])&(hcount[10:1]>=screen[382][9:0]));
+	assign inScreen[383]= ((vcount == 383)&(hcount[10:1]<=screen[383][19:10])&(hcount[10:1]>=screen[383][9:0]));
+	assign inScreen[384]= ((vcount == 384)&(hcount[10:1]<=screen[384][19:10])&(hcount[10:1]>=screen[384][9:0]));
+	assign inScreen[385]= ((vcount == 385)&(hcount[10:1]<=screen[385][19:10])&(hcount[10:1]>=screen[385][9:0]));
+	assign inScreen[386]= ((vcount == 386)&(hcount[10:1]<=screen[386][19:10])&(hcount[10:1]>=screen[386][9:0]));
+	assign inScreen[387]= ((vcount == 387)&(hcount[10:1]<=screen[387][19:10])&(hcount[10:1]>=screen[387][9:0]));
+	assign inScreen[388]= ((vcount == 388)&(hcount[10:1]<=screen[388][19:10])&(hcount[10:1]>=screen[388][9:0]));
+	assign inScreen[389]= ((vcount == 389)&(hcount[10:1]<=screen[389][19:10])&(hcount[10:1]>=screen[389][9:0]));
+	assign inScreen[390]= ((vcount == 390)&(hcount[10:1]<=screen[390][19:10])&(hcount[10:1]>=screen[390][9:0]));
+	assign inScreen[391]= ((vcount == 391)&(hcount[10:1]<=screen[391][19:10])&(hcount[10:1]>=screen[391][9:0]));
+	assign inScreen[392]= ((vcount == 392)&(hcount[10:1]<=screen[392][19:10])&(hcount[10:1]>=screen[392][9:0]));
+	assign inScreen[393]= ((vcount == 393)&(hcount[10:1]<=screen[393][19:10])&(hcount[10:1]>=screen[393][9:0]));
+	assign inScreen[394]= ((vcount == 394)&(hcount[10:1]<=screen[394][19:10])&(hcount[10:1]>=screen[394][9:0]));
+	assign inScreen[395]= ((vcount == 395)&(hcount[10:1]<=screen[395][19:10])&(hcount[10:1]>=screen[395][9:0]));
+	assign inScreen[396]= ((vcount == 396)&(hcount[10:1]<=screen[396][19:10])&(hcount[10:1]>=screen[396][9:0]));
+	assign inScreen[397]= ((vcount == 397)&(hcount[10:1]<=screen[397][19:10])&(hcount[10:1]>=screen[397][9:0]));
+	assign inScreen[398]= ((vcount == 398)&(hcount[10:1]<=screen[398][19:10])&(hcount[10:1]>=screen[398][9:0]));
+	assign inScreen[399]= ((vcount == 399)&(hcount[10:1]<=screen[399][19:10])&(hcount[10:1]>=screen[399][9:0]));
+	assign inScreen[400]= ((vcount == 400)&(hcount[10:1]<=screen[400][19:10])&(hcount[10:1]>=screen[400][9:0]));
+	assign inScreen[401]= ((vcount == 401)&(hcount[10:1]<=screen[401][19:10])&(hcount[10:1]>=screen[401][9:0]));
+	assign inScreen[402]= ((vcount == 402)&(hcount[10:1]<=screen[402][19:10])&(hcount[10:1]>=screen[402][9:0]));
+	assign inScreen[403]= ((vcount == 403)&(hcount[10:1]<=screen[403][19:10])&(hcount[10:1]>=screen[403][9:0]));
+	assign inScreen[404]= ((vcount == 404)&(hcount[10:1]<=screen[404][19:10])&(hcount[10:1]>=screen[404][9:0]));
+	assign inScreen[405]= ((vcount == 405)&(hcount[10:1]<=screen[405][19:10])&(hcount[10:1]>=screen[405][9:0]));
+	assign inScreen[406]= ((vcount == 406)&(hcount[10:1]<=screen[406][19:10])&(hcount[10:1]>=screen[406][9:0]));
+	assign inScreen[407]= ((vcount == 407)&(hcount[10:1]<=screen[407][19:10])&(hcount[10:1]>=screen[407][9:0]));
+	assign inScreen[408]= ((vcount == 408)&(hcount[10:1]<=screen[408][19:10])&(hcount[10:1]>=screen[408][9:0]));
+	assign inScreen[409]= ((vcount == 409)&(hcount[10:1]<=screen[409][19:10])&(hcount[10:1]>=screen[409][9:0]));
+	assign inScreen[410]= ((vcount == 410)&(hcount[10:1]<=screen[410][19:10])&(hcount[10:1]>=screen[410][9:0]));
+	assign inScreen[411]= ((vcount == 411)&(hcount[10:1]<=screen[411][19:10])&(hcount[10:1]>=screen[411][9:0]));
+	assign inScreen[412]= ((vcount == 412)&(hcount[10:1]<=screen[412][19:10])&(hcount[10:1]>=screen[412][9:0]));
+	assign inScreen[413]= ((vcount == 413)&(hcount[10:1]<=screen[413][19:10])&(hcount[10:1]>=screen[413][9:0]));
+	assign inScreen[414]= ((vcount == 414)&(hcount[10:1]<=screen[414][19:10])&(hcount[10:1]>=screen[414][9:0]));
+	assign inScreen[415]= ((vcount == 415)&(hcount[10:1]<=screen[415][19:10])&(hcount[10:1]>=screen[415][9:0]));
+	assign inScreen[416]= ((vcount == 416)&(hcount[10:1]<=screen[416][19:10])&(hcount[10:1]>=screen[416][9:0]));
+	assign inScreen[417]= ((vcount == 417)&(hcount[10:1]<=screen[417][19:10])&(hcount[10:1]>=screen[417][9:0]));
+	assign inScreen[418]= ((vcount == 418)&(hcount[10:1]<=screen[418][19:10])&(hcount[10:1]>=screen[418][9:0]));
+	assign inScreen[419]= ((vcount == 419)&(hcount[10:1]<=screen[419][19:10])&(hcount[10:1]>=screen[419][9:0]));
+	assign inScreen[420]= ((vcount == 420)&(hcount[10:1]<=screen[420][19:10])&(hcount[10:1]>=screen[420][9:0]));
+	assign inScreen[421]= ((vcount == 421)&(hcount[10:1]<=screen[421][19:10])&(hcount[10:1]>=screen[421][9:0]));
+	assign inScreen[422]= ((vcount == 422)&(hcount[10:1]<=screen[422][19:10])&(hcount[10:1]>=screen[422][9:0]));
+	assign inScreen[423]= ((vcount == 423)&(hcount[10:1]<=screen[423][19:10])&(hcount[10:1]>=screen[423][9:0]));
+	assign inScreen[424]= ((vcount == 424)&(hcount[10:1]<=screen[424][19:10])&(hcount[10:1]>=screen[424][9:0]));
+	assign inScreen[425]= ((vcount == 425)&(hcount[10:1]<=screen[425][19:10])&(hcount[10:1]>=screen[425][9:0]));
+	assign inScreen[426]= ((vcount == 426)&(hcount[10:1]<=screen[426][19:10])&(hcount[10:1]>=screen[426][9:0]));
+	assign inScreen[427]= ((vcount == 427)&(hcount[10:1]<=screen[427][19:10])&(hcount[10:1]>=screen[427][9:0]));
+	assign inScreen[428]= ((vcount == 428)&(hcount[10:1]<=screen[428][19:10])&(hcount[10:1]>=screen[428][9:0]));
+	assign inScreen[429]= ((vcount == 429)&(hcount[10:1]<=screen[429][19:10])&(hcount[10:1]>=screen[429][9:0]));
+	assign inScreen[430]= ((vcount == 430)&(hcount[10:1]<=screen[430][19:10])&(hcount[10:1]>=screen[430][9:0]));
+	assign inScreen[431]= ((vcount == 431)&(hcount[10:1]<=screen[431][19:10])&(hcount[10:1]>=screen[431][9:0]));
+	assign inScreen[432]= ((vcount == 432)&(hcount[10:1]<=screen[432][19:10])&(hcount[10:1]>=screen[432][9:0]));
+	assign inScreen[433]= ((vcount == 433)&(hcount[10:1]<=screen[433][19:10])&(hcount[10:1]>=screen[433][9:0]));
+        assign inScreen[434]= ((vcount == 434)&(hcount[10:1]<=screen[434][19:10])&(hcount[10:1]>=screen[434][9:0]));
+	assign inScreen[435]= ((vcount == 435)&(hcount[10:1]<=screen[435][19:10])&(hcount[10:1]>=screen[435][9:0]));
+	assign inScreen[436]= ((vcount == 436)&(hcount[10:1]<=screen[436][19:10])&(hcount[10:1]>=screen[436][9:0]));
+	assign inScreen[437]= ((vcount == 437)&(hcount[10:1]<=screen[437][19:10])&(hcount[10:1]>=screen[437][9:0]));
+	assign inScreen[438]= ((vcount == 438)&(hcount[10:1]<=screen[438][19:10])&(hcount[10:1]>=screen[438][9:0]));
+	assign inScreen[439]= ((vcount == 439)&(hcount[10:1]<=screen[439][19:10])&(hcount[10:1]>=screen[439][9:0]));
+	assign inScreen[440]= ((vcount == 440)&(hcount[10:1]<=screen[440][19:10])&(hcount[10:1]>=screen[440][9:0]));
+	assign inScreen[441]= ((vcount == 441)&(hcount[10:1]<=screen[441][19:10])&(hcount[10:1]>=screen[441][9:0]));
+	assign inScreen[442]= ((vcount == 442)&(hcount[10:1]<=screen[442][19:10])&(hcount[10:1]>=screen[442][9:0]));
+	assign inScreen[443]= ((vcount == 443)&(hcount[10:1]<=screen[443][19:10])&(hcount[10:1]>=screen[443][9:0]));
+	assign inScreen[444]= ((vcount == 444)&(hcount[10:1]<=screen[444][19:10])&(hcount[10:1]>=screen[444][9:0]));
+	assign inScreen[445]= ((vcount == 445)&(hcount[10:1]<=screen[445][19:10])&(hcount[10:1]>=screen[445][9:0]));
+	assign inScreen[446]= ((vcount == 446)&(hcount[10:1]<=screen[446][19:10])&(hcount[10:1]>=screen[446][9:0]));
+	assign inScreen[447]= ((vcount == 447)&(hcount[10:1]<=screen[447][19:10])&(hcount[10:1]>=screen[447][9:0]));
+	assign inScreen[448]= ((vcount == 448)&(hcount[10:1]<=screen[448][19:10])&(hcount[10:1]>=screen[448][9:0]));
+	assign inScreen[449]= ((vcount == 449)&(hcount[10:1]<=screen[449][19:10])&(hcount[10:1]>=screen[449][9:0]));
+	assign inScreen[450]= ((vcount == 450)&(hcount[10:1]<=screen[450][19:10])&(hcount[10:1]>=screen[450][9:0]));
+	assign inScreen[451]= ((vcount == 451)&(hcount[10:1]<=screen[451][19:10])&(hcount[10:1]>=screen[451][9:0]));
+	assign inScreen[452]= ((vcount == 452)&(hcount[10:1]<=screen[452][19:10])&(hcount[10:1]>=screen[452][9:0]));
+	assign inScreen[453]= ((vcount == 453)&(hcount[10:1]<=screen[453][19:10])&(hcount[10:1]>=screen[453][9:0]));
+	assign inScreen[454]= ((vcount == 454)&(hcount[10:1]<=screen[454][19:10])&(hcount[10:1]>=screen[454][9:0]));
+	assign inScreen[455]= ((vcount == 455)&(hcount[10:1]<=screen[455][19:10])&(hcount[10:1]>=screen[455][9:0]));
+	assign inScreen[456]= ((vcount == 456)&(hcount[10:1]<=screen[456][19:10])&(hcount[10:1]>=screen[456][9:0]));
+	assign inScreen[457]= ((vcount == 457)&(hcount[10:1]<=screen[457][19:10])&(hcount[10:1]>=screen[457][9:0]));
+	assign inScreen[458]= ((vcount == 458)&(hcount[10:1]<=screen[458][19:10])&(hcount[10:1]>=screen[458][9:0]));
+	assign inScreen[459]= ((vcount == 459)&(hcount[10:1]<=screen[459][19:10])&(hcount[10:1]>=screen[459][9:0]));
+	assign inScreen[460]= ((vcount == 460)&(hcount[10:1]<=screen[460][19:10])&(hcount[10:1]>=screen[460][9:0]));
+	assign inScreen[461]= ((vcount == 461)&(hcount[10:1]<=screen[461][19:10])&(hcount[10:1]>=screen[461][9:0]));
+	assign inScreen[462]= ((vcount == 462)&(hcount[10:1]<=screen[462][19:10])&(hcount[10:1]>=screen[462][9:0]));
+	assign inScreen[463]= ((vcount == 463)&(hcount[10:1]<=screen[463][19:10])&(hcount[10:1]>=screen[463][9:0]));
+	assign inScreen[464]= ((vcount == 464)&(hcount[10:1]<=screen[464][19:10])&(hcount[10:1]>=screen[464][9:0]));
+	assign inScreen[465]= ((vcount == 465)&(hcount[10:1]<=screen[465][19:10])&(hcount[10:1]>=screen[465][9:0]));
+	assign inScreen[466]= ((vcount == 466)&(hcount[10:1]<=screen[466][19:10])&(hcount[10:1]>=screen[466][9:0]));
+	assign inScreen[467]= ((vcount == 467)&(hcount[10:1]<=screen[467][19:10])&(hcount[10:1]>=screen[467][9:0]));
+        assign inScreen[468]= ((vcount == 468)&(hcount[10:1]<=screen[468][19:10])&(hcount[10:1]>=screen[468][9:0]));
+	assign inScreen[469]= ((vcount == 469)&(hcount[10:1]<=screen[469][19:10])&(hcount[10:1]>=screen[469][9:0]));
+	assign inScreen[470]= ((vcount == 470)&(hcount[10:1]<=screen[470][19:10])&(hcount[10:1]>=screen[470][9:0]));
+	assign inScreen[471]= ((vcount == 471)&(hcount[10:1]<=screen[471][19:10])&(hcount[10:1]>=screen[471][9:0]));
+	assign inScreen[472]= ((vcount == 472)&(hcount[10:1]<=screen[472][19:10])&(hcount[10:1]>=screen[472][9:0]));
+	assign inScreen[473]= ((vcount == 473)&(hcount[10:1]<=screen[473][19:10])&(hcount[10:1]>=screen[473][9:0]));
+	assign inScreen[474]= ((vcount == 474)&(hcount[10:1]<=screen[474][19:10])&(hcount[10:1]>=screen[474][9:0]));
+	assign inScreen[475]= ((vcount == 475)&(hcount[10:1]<=screen[475][19:10])&(hcount[10:1]>=screen[475][9:0]));
+	assign inScreen[476]= ((vcount == 476)&(hcount[10:1]<=screen[476][19:10])&(hcount[10:1]>=screen[476][9:0]));
+	assign inScreen[477]= ((vcount == 477)&(hcount[10:1]<=screen[477][19:10])&(hcount[10:1]>=screen[477][9:0]));
+	assign inScreen[478]= ((vcount == 478)&(hcount[10:1]<=screen[478][19:10])&(hcount[10:1]>=screen[478][9:0]));
+	assign inScreen[479]= ((vcount == 479)&(hcount[10:1]<=screen[479][19:10])&(hcount[10:1]>=screen[479][9:0]));   
+	assign color[0]=((screen[0][20]==1));
+	assign color[1]=((screen[1][20]==1));
+	assign color[2]=((screen[2][20]==1));
+        assign color[3]=((screen[3][20]==1));
+        assign color[4]=((screen[4][20]==1));
+        assign color[5]=((screen[5][20]==1));
+        assign color[6]=((screen[6][20]==1));
+        assign color[7]=((screen[7][20]==1));
+        assign color[8]=((screen[8][20]==1));
+        assign color[9]=((screen[9][20]==1));
+        assign color[10]=((screen[10][20]==1));
+        assign color[11]=((screen[11][20]==1));
+        assign color[12]=((screen[12][20]==1));
+        assign color[13]=((screen[13][20]==1));
+        assign color[14]=((screen[14][20]==1));
+        assign color[15]=((screen[15][20]==1));
+        assign color[16]=((screen[16][20]==1));
+	assign color[17]=((screen[17][20]==1));
+	assign color[18]=((screen[18][20]==1));
+	assign color[19]=((screen[19][20]==1));
+        assign color[20]=((screen[20][20]==1));
+        assign color[21]=((screen[21][20]==1));
+        assign color[22]=((screen[22][20]==1));
+        assign color[23]=((screen[23][20]==1));
+        assign color[24]=((screen[24][20]==1));
+        assign color[25]=((screen[25][20]==1));
+        assign color[26]=((screen[26][20]==1));
+        assign color[27]=((screen[27][20]==1));
+        assign color[28]=((screen[28][20]==1));
+        assign color[29]=((screen[29][20]==1));
+        assign color[30]=((screen[30][20]==1));
+        assign color[31]=((screen[31][20]==1));
+        assign color[32]=((screen[32][20]==1));
+        assign color[33]=((screen[33][20]==1));
+	assign color[34]=((screen[34][20]==1));
+	assign color[35]=((screen[35][20]==1));
+	assign color[36]=((screen[36][20]==1));
+        assign color[37]=((screen[37][20]==1));
+        assign color[38]=((screen[38][20]==1));
+        assign color[39]=((screen[39][20]==1));
+        assign color[40]=((screen[40][20]==1));
+        assign color[41]=((screen[41][20]==1));
+        assign color[42]=((screen[42][20]==1));
+        assign color[43]=((screen[43][20]==1));
+        assign color[44]=((screen[44][20]==1));
+        assign color[45]=((screen[45][20]==1));
+        assign color[46]=((screen[46][20]==1));
+        assign color[47]=((screen[47][20]==1));
+        assign color[48]=((screen[48][20]==1));
+        assign color[49]=((screen[49][20]==1));
+        assign color[50]=((screen[50][20]==1));
+	assign color[51]=((screen[51][20]==1));
+	assign color[52]=((screen[52][20]==1));
+	assign color[53]=((screen[53][20]==1));
+        assign color[54]=((screen[54][20]==1));
+        assign color[55]=((screen[55][20]==1));
+        assign color[56]=((screen[56][20]==1));
+        assign color[57]=((screen[57][20]==1));
+        assign color[58]=((screen[58][20]==1));
+        assign color[59]=((screen[59][20]==1));
+        assign color[60]=((screen[60][20]==1));
+        assign color[61]=((screen[61][20]==1));
+        assign color[62]=((screen[62][20]==1));
+        assign color[63]=((screen[63][20]==1));
+        assign color[64]=((screen[64][20]==1));
+        assign color[65]=((screen[65][20]==1));
+        assign color[66]=((screen[66][20]==1));
+        assign color[67]=((screen[67][20]==1));
+	assign color[68]=((screen[68][20]==1));
+        assign color[69]=((screen[69][20]==1));
+        assign color[70]=((screen[70][20]==1));
+        assign color[71]=((screen[71][20]==1));
+        assign color[72]=((screen[72][20]==1));
+        assign color[73]=((screen[73][20]==1));
+        assign color[74]=((screen[74][20]==1));
+        assign color[75]=((screen[75][20]==1));
+        assign color[76]=((screen[76][20]==1));
+        assign color[77]=((screen[77][20]==1));
+        assign color[78]=((screen[78][20]==1));
+        assign color[79]=((screen[79][20]==1));
+	assign color[80]=((screen[80][20]==1));
+	assign color[81]=((screen[81][20]==1));
+	assign color[82]=((screen[82][20]==1));
+        assign color[83]=((screen[83][20]==1));
+        assign color[84]=((screen[84][20]==1));
+        assign color[85]=((screen[85][20]==1));
+        assign color[86]=((screen[86][20]==1));
+        assign color[87]=((screen[87][20]==1));
+        assign color[88]=((screen[88][20]==1));
+        assign color[89]=((screen[89][20]==1));
+        assign color[90]=((screen[90][20]==1));
+        assign color[91]=((screen[91][20]==1));
+        assign color[92]=((screen[92][20]==1));
+        assign color[93]=((screen[93][20]==1));
+        assign color[94]=((screen[94][20]==1));
+        assign color[95]=((screen[95][20]==1));
+        assign color[96]=((screen[96][20]==1));
+	assign color[97]=((screen[97][20]==1));
+        assign color[98]=((screen[98][20]==1));
+        assign color[99]=((screen[99][20]==1));
+        assign color[100]=((screen[100][20]==1));
+	assign color[101]=((screen[101][20]==1));
+	assign color[102]=((screen[102][20]==1));
+        assign color[103]=((screen[103][20]==1));
+        assign color[104]=((screen[104][20]==1));
+        assign color[105]=((screen[105][20]==1));
+        assign color[106]=((screen[106][20]==1));
+        assign color[107]=((screen[107][20]==1));
+        assign color[108]=((screen[108][20]==1));
+        assign color[109]=((screen[109][20]==1));
+        assign color[110]=((screen[110][20]==1));
+        assign color[111]=((screen[111][20]==1));
+        assign color[112]=((screen[112][20]==1));
+        assign color[113]=((screen[113][20]==1));
+        assign color[114]=((screen[114][20]==1));
+        assign color[115]=((screen[115][20]==1));
+        assign color[116]=((screen[116][20]==1));
+	assign color[117]=((screen[117][20]==1));
+	assign color[118]=((screen[118][20]==1));
+	assign color[119]=((screen[119][20]==1));
+        assign color[120]=((screen[120][20]==1));
+        assign color[121]=((screen[121][20]==1));
+        assign color[122]=((screen[122][20]==1));
+        assign color[123]=((screen[123][20]==1));
+        assign color[124]=((screen[124][20]==1));
+        assign color[125]=((screen[125][20]==1));
+        assign color[126]=((screen[126][20]==1));
+        assign color[127]=((screen[127][20]==1));
+        assign color[128]=((screen[128][20]==1));
+        assign color[129]=((screen[129][20]==1));
+        assign color[130]=((screen[130][20]==1));
+        assign color[131]=((screen[131][20]==1));
+        assign color[132]=((screen[132][20]==1));
+        assign color[133]=((screen[133][20]==1));
+	assign color[134]=((screen[134][20]==1));
+	assign color[135]=((screen[135][20]==1));
+	assign color[136]=((screen[136][20]==1));
+        assign color[137]=((screen[137][20]==1));
+        assign color[138]=((screen[138][20]==1));
+        assign color[139]=((screen[139][20]==1));
+        assign color[140]=((screen[140][20]==1));
+        assign color[141]=((screen[141][20]==1));
+        assign color[142]=((screen[142][20]==1));
+        assign color[143]=((screen[143][20]==1));
+        assign color[144]=((screen[144][20]==1));
+        assign color[145]=((screen[145][20]==1));
+        assign color[146]=((screen[146][20]==1));
+        assign color[147]=((screen[147][20]==1));
+        assign color[148]=((screen[148][20]==1));
+        assign color[149]=((screen[149][20]==1));
+        assign color[150]=((screen[150][20]==1));
+	assign color[151]=((screen[151][20]==1));
+	assign color[152]=((screen[152][20]==1));
+	assign color[153]=((screen[153][20]==1));
+        assign color[154]=((screen[154][20]==1));
+        assign color[155]=((screen[155][20]==1));
+        assign color[156]=((screen[156][20]==1));
+        assign color[157]=((screen[157][20]==1));
+        assign color[158]=((screen[158][20]==1));
+        assign color[159]=((screen[159][20]==1));
+        assign color[160]=((screen[160][20]==1));
+        assign color[161]=((screen[161][20]==1));
+        assign color[162]=((screen[162][20]==1));
+        assign color[163]=((screen[163][20]==1));
+        assign color[164]=((screen[164][20]==1));
+        assign color[165]=((screen[165][20]==1));
+        assign color[166]=((screen[166][20]==1));
+        assign color[167]=((screen[167][20]==1));
+	assign color[168]=((screen[168][20]==1));
+        assign color[169]=((screen[169][20]==1));
+        assign color[170]=((screen[170][20]==1));
+        assign color[171]=((screen[171][20]==1));
+        assign color[172]=((screen[172][20]==1));
+        assign color[173]=((screen[173][20]==1));
+        assign color[174]=((screen[174][20]==1));
+        assign color[175]=((screen[175][20]==1));
+        assign color[176]=((screen[176][20]==1));
+        assign color[177]=((screen[177][20]==1));
+        assign color[178]=((screen[178][20]==1));
+        assign color[179]=((screen[179][20]==1));
+	assign color[180]=((screen[180][20]==1));
+	assign color[181]=((screen[181][20]==1));
+	assign color[182]=((screen[182][20]==1));
+        assign color[183]=((screen[183][20]==1));
+        assign color[184]=((screen[184][20]==1));
+        assign color[185]=((screen[185][20]==1));
+        assign color[186]=((screen[186][20]==1));
+        assign color[187]=((screen[187][20]==1));
+        assign color[188]=((screen[188][20]==1));
+        assign color[189]=((screen[189][20]==1));
+        assign color[190]=((screen[190][20]==1));
+        assign color[191]=((screen[191][20]==1));
+        assign color[192]=((screen[192][20]==1));
+        assign color[193]=((screen[193][20]==1));
+        assign color[194]=((screen[194][20]==1));
+        assign color[195]=((screen[195][20]==1));
+        assign color[196]=((screen[196][20]==1));
+	assign color[197]=((screen[197][20]==1));
+        assign color[198]=((screen[198][20]==1));
+        assign color[199]=((screen[199][20]==1));
+        assign color[200]=((screen[200][20]==1));
+	assign color[201]=((screen[201][20]==1));
+	assign color[202]=((screen[202][20]==1));
+        assign color[203]=((screen[203][20]==1));
+        assign color[204]=((screen[204][20]==1));
+        assign color[205]=((screen[205][20]==1));
+        assign color[206]=((screen[206][20]==1));
+        assign color[207]=((screen[207][20]==1));
+        assign color[208]=((screen[208][20]==1));
+        assign color[209]=((screen[209][20]==1));
+        assign color[210]=((screen[210][20]==1));
+        assign color[211]=((screen[211][20]==1));
+        assign color[212]=((screen[212][20]==1));
+        assign color[213]=((screen[213][20]==1));
+        assign color[214]=((screen[214][20]==1));
+        assign color[215]=((screen[215][20]==1));
+        assign color[216]=((screen[216][20]==1));
+	assign color[217]=((screen[217][20]==1));
+	assign color[218]=((screen[218][20]==1));
+	assign color[219]=((screen[219][20]==1));
+        assign color[220]=((screen[220][20]==1));
+        assign color[221]=((screen[221][20]==1));
+        assign color[222]=((screen[222][20]==1));
+        assign color[223]=((screen[223][20]==1));
+        assign color[224]=((screen[224][20]==1));
+        assign color[225]=((screen[225][20]==1));
+        assign color[226]=((screen[226][20]==1));
+        assign color[227]=((screen[227][20]==1));
+        assign color[228]=((screen[228][20]==1));
+        assign color[229]=((screen[229][20]==1));
+        assign color[230]=((screen[230][20]==1));
+        assign color[231]=((screen[231][20]==1));
+        assign color[232]=((screen[232][20]==1));
+        assign color[233]=((screen[233][20]==1));
+	assign color[234]=((screen[234][20]==1));
+	assign color[235]=((screen[235][20]==1));
+	assign color[236]=((screen[236][20]==1));
+        assign color[237]=((screen[237][20]==1));
+        assign color[238]=((screen[238][20]==1));
+        assign color[239]=((screen[239][20]==1));
+        assign color[240]=((screen[240][20]==1));
+        assign color[241]=((screen[241][20]==1));
+        assign color[242]=((screen[242][20]==1));
+        assign color[243]=((screen[243][20]==1));
+        assign color[244]=((screen[244][20]==1));
+        assign color[245]=((screen[245][20]==1));
+        assign color[246]=((screen[246][20]==1));
+        assign color[247]=((screen[247][20]==1));
+        assign color[248]=((screen[248][20]==1));
+        assign color[249]=((screen[249][20]==1));
+        assign color[250]=((screen[250][20]==1));
+	assign color[251]=((screen[251][20]==1));
+	assign color[252]=((screen[252][20]==1));
+	assign color[253]=((screen[253][20]==1));
+        assign color[254]=((screen[254][20]==1));
+        assign color[255]=((screen[255][20]==1));
+        assign color[256]=((screen[256][20]==1));
+        assign color[257]=((screen[257][20]==1));
+        assign color[258]=((screen[258][20]==1));
+        assign color[259]=((screen[259][20]==1));
+        assign color[260]=((screen[260][20]==1));
+        assign color[261]=((screen[261][20]==1));
+        assign color[262]=((screen[262][20]==1));
+        assign color[263]=((screen[263][20]==1));
+        assign color[264]=((screen[264][20]==1));
+        assign color[265]=((screen[265][20]==1));
+        assign color[266]=((screen[266][20]==1));
+        assign color[267]=((screen[267][20]==1));
+	assign color[268]=((screen[268][20]==1));
+        assign color[269]=((screen[269][20]==1));
+        assign color[270]=((screen[270][20]==1));
+        assign color[271]=((screen[271][20]==1));
+        assign color[272]=((screen[272][20]==1));
+        assign color[273]=((screen[273][20]==1));
+        assign color[274]=((screen[274][20]==1));
+        assign color[275]=((screen[275][20]==1));
+        assign color[276]=((screen[276][20]==1));
+        assign color[277]=((screen[277][20]==1));
+        assign color[278]=((screen[278][20]==1));
+        assign color[279]=((screen[279][20]==1));
+	assign color[280]=((screen[280][20]==1));
+	assign color[281]=((screen[281][20]==1));
+	assign color[282]=((screen[282][20]==1));
+        assign color[283]=((screen[283][20]==1));
+        assign color[284]=((screen[284][20]==1));
+        assign color[285]=((screen[285][20]==1));
+        assign color[286]=((screen[286][20]==1));
+        assign color[287]=((screen[287][20]==1));
+        assign color[288]=((screen[288][20]==1));
+        assign color[289]=((screen[289][20]==1));
+        assign color[290]=((screen[290][20]==1));
+        assign color[291]=((screen[291][20]==1));
+        assign color[292]=((screen[292][20]==1));
+        assign color[293]=((screen[293][20]==1));
+        assign color[294]=((screen[294][20]==1));
+        assign color[295]=((screen[295][20]==1));
+        assign color[296]=((screen[296][20]==1));
+	assign color[297]=((screen[297][20]==1));
+        assign color[298]=((screen[298][20]==1));
+        assign color[299]=((screen[299][20]==1));
+        assign color[300]=((screen[300][20]==1));
+	assign color[301]=((screen[301][20]==1));
+	assign color[302]=((screen[302][20]==1));
+        assign color[303]=((screen[303][20]==1));
+        assign color[304]=((screen[304][20]==1));
+        assign color[305]=((screen[305][20]==1));
+        assign color[306]=((screen[306][20]==1));
+        assign color[307]=((screen[307][20]==1));
+        assign color[308]=((screen[308][20]==1));
+        assign color[309]=((screen[309][20]==1));
+        assign color[310]=((screen[310][20]==1));
+        assign color[311]=((screen[311][20]==1));
+        assign color[312]=((screen[312][20]==1));
+        assign color[313]=((screen[313][20]==1));
+        assign color[314]=((screen[314][20]==1));
+        assign color[315]=((screen[315][20]==1));
+        assign color[316]=((screen[316][20]==1));
+	assign color[317]=((screen[317][20]==1));
+	assign color[318]=((screen[318][20]==1));
+	assign color[319]=((screen[319][20]==1));
+        assign color[320]=((screen[320][20]==1));
+        assign color[321]=((screen[321][20]==1));
+        assign color[322]=((screen[322][20]==1));
+        assign color[323]=((screen[323][20]==1));
+        assign color[324]=((screen[324][20]==1));
+        assign color[325]=((screen[325][20]==1));
+        assign color[326]=((screen[326][20]==1));
+        assign color[327]=((screen[327][20]==1));
+        assign color[328]=((screen[328][20]==1));
+        assign color[329]=((screen[329][20]==1));
+        assign color[330]=((screen[330][20]==1));
+        assign color[331]=((screen[331][20]==1));
+        assign color[332]=((screen[332][20]==1));
+        assign color[333]=((screen[333][20]==1));
+	assign color[334]=((screen[334][20]==1));
+	assign color[335]=((screen[335][20]==1));
+	assign color[336]=((screen[336][20]==1));
+        assign color[337]=((screen[337][20]==1));
+        assign color[338]=((screen[338][20]==1));
+        assign color[339]=((screen[339][20]==1));
+        assign color[340]=((screen[340][20]==1));
+        assign color[341]=((screen[341][20]==1));
+        assign color[342]=((screen[342][20]==1));
+        assign color[343]=((screen[343][20]==1));
+        assign color[344]=((screen[344][20]==1));
+        assign color[345]=((screen[345][20]==1));
+        assign color[346]=((screen[346][20]==1));
+        assign color[347]=((screen[347][20]==1));
+        assign color[348]=((screen[348][20]==1));
+        assign color[349]=((screen[349][20]==1));
+        assign color[350]=((screen[350][20]==1));
+	assign color[351]=((screen[351][20]==1));
+	assign color[352]=((screen[352][20]==1));
+	assign color[353]=((screen[353][20]==1));
+        assign color[354]=((screen[354][20]==1));
+        assign color[355]=((screen[355][20]==1));
+        assign color[356]=((screen[356][20]==1));
+        assign color[357]=((screen[357][20]==1));
+        assign color[358]=((screen[358][20]==1));
+        assign color[359]=((screen[359][20]==1));
+        assign color[360]=((screen[360][20]==1));
+        assign color[361]=((screen[361][20]==1));
+        assign color[362]=((screen[362][20]==1));
+        assign color[363]=((screen[363][20]==1));
+        assign color[364]=((screen[364][20]==1));
+        assign color[365]=((screen[365][20]==1));
+        assign color[366]=((screen[366][20]==1));
+        assign color[367]=((screen[367][20]==1));
+	assign color[368]=((screen[368][20]==1));
+        assign color[369]=((screen[369][20]==1));
+        assign color[370]=((screen[370][20]==1));
+        assign color[371]=((screen[371][20]==1));
+        assign color[372]=((screen[372][20]==1));
+        assign color[373]=((screen[373][20]==1));
+        assign color[374]=((screen[374][20]==1));
+        assign color[375]=((screen[375][20]==1));
+        assign color[376]=((screen[376][20]==1));
+        assign color[377]=((screen[377][20]==1));
+        assign color[378]=((screen[378][20]==1));
+        assign color[379]=((screen[379][20]==1));
+	assign color[380]=((screen[380][20]==1));
+	assign color[381]=((screen[381][20]==1));
+	assign color[382]=((screen[382][20]==1));
+        assign color[383]=((screen[383][20]==1));
+        assign color[384]=((screen[384][20]==1));
+        assign color[385]=((screen[385][20]==1));
+        assign color[386]=((screen[386][20]==1));
+        assign color[387]=((screen[387][20]==1));
+        assign color[388]=((screen[388][20]==1));
+        assign color[389]=((screen[389][20]==1));
+        assign color[390]=((screen[390][20]==1));
+        assign color[391]=((screen[391][20]==1));
+        assign color[392]=((screen[392][20]==1));
+        assign color[393]=((screen[393][20]==1));
+        assign color[394]=((screen[394][20]==1));
+        assign color[395]=((screen[395][20]==1));
+        assign color[396]=((screen[396][20]==1));
+	assign color[397]=((screen[397][20]==1));
+        assign color[398]=((screen[398][20]==1));
+        assign color[399]=((screen[399][20]==1));
+        assign color[400]=((screen[400][20]==1));
+	assign color[401]=((screen[401][20]==1));
+	assign color[402]=((screen[402][20]==1));
+        assign color[403]=((screen[403][20]==1));
+        assign color[404]=((screen[404][20]==1));
+        assign color[405]=((screen[405][20]==1));
+        assign color[406]=((screen[406][20]==1));
+        assign color[407]=((screen[407][20]==1));
+        assign color[408]=((screen[408][20]==1));
+        assign color[409]=((screen[409][20]==1));
+        assign color[410]=((screen[410][20]==1));
+        assign color[411]=((screen[411][20]==1));
+        assign color[412]=((screen[412][20]==1));
+        assign color[413]=((screen[413][20]==1));
+        assign color[414]=((screen[414][20]==1));
+        assign color[415]=((screen[415][20]==1));
+        assign color[416]=((screen[416][20]==1));
+	assign color[417]=((screen[417][20]==1));
+	assign color[418]=((screen[418][20]==1));
+	assign color[419]=((screen[419][20]==1));
+        assign color[420]=((screen[420][20]==1));
+        assign color[421]=((screen[421][20]==1));
+        assign color[422]=((screen[422][20]==1));
+        assign color[423]=((screen[423][20]==1));
+        assign color[424]=((screen[424][20]==1));
+        assign color[425]=((screen[425][20]==1));
+        assign color[426]=((screen[426][20]==1));
+        assign color[427]=((screen[427][20]==1));
+        assign color[428]=((screen[428][20]==1));
+        assign color[429]=((screen[429][20]==1));
+        assign color[430]=((screen[430][20]==1));
+        assign color[431]=((screen[431][20]==1));
+        assign color[432]=((screen[432][20]==1));
+        assign color[433]=((screen[433][20]==1));
+	assign color[434]=((screen[434][20]==1));
+	assign color[435]=((screen[435][20]==1));
+	assign color[436]=((screen[436][20]==1));
+        assign color[437]=((screen[437][20]==1));
+        assign color[438]=((screen[438][20]==1));
+        assign color[439]=((screen[439][20]==1));
+        assign color[440]=((screen[440][20]==1));
+        assign color[441]=((screen[441][20]==1));
+        assign color[442]=((screen[442][20]==1));
+        assign color[443]=((screen[443][20]==1));
+        assign color[444]=((screen[444][20]==1));
+        assign color[445]=((screen[445][20]==1));
+        assign color[446]=((screen[446][20]==1));
+        assign color[447]=((screen[447][20]==1));
+        assign color[448]=((screen[448][20]==1));
+        assign color[449]=((screen[449][20]==1));
+        assign color[450]=((screen[450][20]==1));
+	assign color[451]=((screen[451][20]==1));
+	assign color[452]=((screen[452][20]==1));
+	assign color[453]=((screen[453][20]==1));
+        assign color[454]=((screen[454][20]==1));
+        assign color[455]=((screen[455][20]==1));
+        assign color[456]=((screen[456][20]==1));
+        assign color[457]=((screen[457][20]==1));
+        assign color[458]=((screen[458][20]==1));
+        assign color[459]=((screen[459][20]==1));
+        assign color[460]=((screen[460][20]==1));
+        assign color[461]=((screen[461][20]==1));
+        assign color[462]=((screen[462][20]==1));
+        assign color[463]=((screen[463][20]==1));
+        assign color[464]=((screen[464][20]==1));
+        assign color[465]=((screen[465][20]==1));
+        assign color[466]=((screen[466][20]==1));
+        assign color[467]=((screen[467][20]==1));
+	assign color[468]=((screen[468][20]==1));
+        assign color[469]=((screen[469][20]==1));
+        assign color[470]=((screen[470][20]==1));
+        assign color[471]=((screen[471][20]==1));
+        assign color[472]=((screen[472][20]==1));
+        assign color[473]=((screen[473][20]==1));
+        assign color[474]=((screen[474][20]==1));
+        assign color[475]=((screen[475][20]==1));
+        assign color[476]=((screen[476][20]==1));
+        assign color[477]=((screen[477][20]==1));
+        assign color[478]=((screen[478][20]==1));
+        assign color[479]=((screen[479][20]==1));
+
+/*
+   logic 			     inChar; // In any character
+
+   assign inChar = (vcount[9:7] == 3'd1) &
+		   (hcount[10:7] != 4'd0 & hcount[10:7] != 4'd9);
+   
+   logic [2:0] 			     charx; // Coordinate within the 8x16 char
+   logic [3:0] 			     chary;
+
+   assign charx = hcount[6:4];
+   assign chary = vcount[6:3];
+
+   logic horizBar, leftCol, rightCol, topCol, botCol; // Parts of the disp.
+
+   assign horizBar = !(charx[2:1] == 2'b11);  // When in any horizontal bar
+   assign leftCol  = (charx == 3'd0);         // When in left column
+   assign rightCol = (charx == 3'd5);         // When in right column
+   assign topCol   = !chary[3] & !(chary[2:0] == 3'd7); // Top columns
+   assign botCol   = (chary >= 4'd6) & (chary <= 4'd12); // Bottom columns
+
+   logic [7:0] segment; // True when in each segment
+   assign segment[0] = horizBar & (chary == 4'd 0);
+   assign segment[1] = rightCol & topCol;
+   assign segment[2] = rightCol & botCol;
+   assign segment[3] = horizBar & (chary == 4'd 12);
+   assign segment[4] = leftCol & botCol;
+   assign segment[5] = leftCol & topCol;
+   assign segment[6] = horizBar & (chary == 4'd 6);
+   assign segment[7] = (charx == 3'd6) & (chary == 4'd14);
+
+   logic [2:0] column; // Being displayed
+   assign column = hcount[9:7];
+   
+   logic [7:0] curSegs;
+   assign curSegs = column == 3'd1 ? hex0 :
+		    column == 3'd2 ? hex1 :
+		    column == 3'd3 ? hex2 :
+		    column == 3'd4 ? hex3 :
+		    column == 3'd5 ? hex4 :
+		    column == 3'd6 ? hex5 :
+		    column == 3'd7 ? hex6 :
+		    hex7;
+ */  
+   always_comb begin
+      {VGA_R, VGA_G, VGA_B} = {8'd255, 8'd255, 8'd255}; // Black
+      if (|(inScreen &  color) )
+	
+	  {VGA_R, VGA_G, VGA_B} = {8'd0, 8'd0, 8'd128}; // Red
+     else if(|inScreen)
+          {VGA_R, VGA_G, VGA_B} = {8'd0, 8'd0, 8'd255}; // Dark Gray
+	  
+   end  
+   
+endmodule // VGA_LED_Emulator
